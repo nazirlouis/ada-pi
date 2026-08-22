@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import signal
 import time
 from contextlib import suppress
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -27,9 +29,28 @@ app = FastAPI(title="Pi Full-Duplex Voice Prototype")
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 
 
+@app.middleware("http")
+async def disable_frontend_cache(request, call_next):
+    """Keep long-running kiosk Chromium sessions on the current UI code."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(FRONTEND / "index.html")
+
+
+@app.post("/shutdown", status_code=202)
+async def shutdown(request: Request, background_tasks: BackgroundTasks) -> dict[str, str]:
+    """Allow only the locally displayed kiosk to stop this backend process."""
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1"}:
+        raise HTTPException(status_code=403, detail="Shutdown is available only from this device")
+    background_tasks.add_task(os.kill, os.getpid(), signal.SIGTERM)
+    return {"status": "shutting_down"}
 
 
 async def send_json(socket: WebSocket, event_type: str, **data: object) -> None:

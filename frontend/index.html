@@ -2,26 +2,62 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ADA Pi Voice Chat</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <title>ADA Pi</title>
+    <link rel="stylesheet" href="/static/style.css?v=20260822-browblink1">
   </head>
   <body>
-    <main>
-      <h1>ADA Pi voice chat</h1>
-      <div class="controls">
-        <button id="connect">Connect</button>
+    <main id="face-stage" aria-label="ADA voice assistant. Tap to connect.">
+      <svg id="idle-face" viewBox="140 84 1320 792" role="img" aria-label="ADA's cyan illuminated eyes and smile">
+        <defs>
+          <filter id="mouth-glow" x="-80%" y="-120%" width="260%" height="340%">
+            <feGaussianBlur stdDeviation="9" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <g id="face-rig">
+        <g class="eye left-eye" filter="url(#mouth-glow)">
+          <g class="eye-expression">
+          <path class="eye-panel" d="M215 377 Q237 390 258 376 C356 333 505 327 596 360 C642 377 666 454 675 560 C554 593 408 600 311 558 C263 537 238 477 247 396Z"/>
+          <path class="shimmer-line" pathLength="1" d="M215 377 Q237 390 258 376 C356 333 505 327 596 360 C642 377 666 454 675 560 C554 593 408 600 311 558 C263 537 238 477 247 396Z"/>
+          </g>
+        </g>
+
+        <g class="eye right-eye" filter="url(#mouth-glow)">
+          <g class="eye-expression">
+          <path class="eye-panel" d="M1385 377 Q1363 390 1342 376 C1244 333 1095 327 1004 360 C958 377 934 454 925 560 C1046 593 1192 600 1289 558 C1337 537 1362 477 1353 396Z"/>
+          <path class="shimmer-line" pathLength="1" d="M1385 377 Q1363 390 1342 376 C1244 333 1095 327 1004 360 C958 377 934 454 925 560 C1046 593 1192 600 1289 558 C1337 537 1362 477 1353 396Z"/>
+          </g>
+        </g>
+
+        <g class="expression-brows" filter="url(#mouth-glow)" aria-hidden="true">
+          <path class="expression-brow left-brow"/>
+          <path class="expression-brow right-brow"/>
+        </g>
+
+        <g class="mouth-track">
+          <g class="mouth-expression">
+          <path class="mouth-aura" d="M690 742 C758 776 842 776 910 742 C858 805 742 805 690 742Z"/>
+          <path class="mouth" filter="url(#mouth-glow)" d="M690 742 C758 776 842 776 910 742 C858 805 742 805 690 742Z"/>
+          <path class="shimmer-line mouth-shimmer" pathLength="1" d="M690 742 C758 776 842 776 910 742 C858 805 742 805 690 742Z"/>
+          </g>
+        </g>
+        </g>
+      </svg>
+
+      <div id="session-controls" aria-label="Session controls">
         <button id="disconnect" disabled>Disconnect</button>
+        <button id="exit" class="danger">Exit</button>
       </div>
-      <dl>
-        <div><dt>Connection</dt><dd id="connection-status">Disconnected</dd></div>
-        <div><dt>Microphone</dt><dd id="microphone-status">Off</dd></div>
-      </dl>
-      <section aria-labelledby="log-title">
-        <h2 id="log-title">Transcript</h2>
-        <div id="log" role="log" aria-live="polite"></div>
-      </section>
+      <div id="expression-controls" aria-label="Temporary expression test controls"></div>
+      <button id="connect" class="sr-only">Connect</button>
+      <div id="connection-status" class="sr-only" aria-live="polite">Disconnected</div>
+      <div id="microphone-status" class="sr-only">Off</div>
+      <div id="log" class="sr-only" role="log" aria-live="polite"></div>
     </main>
-    <script src="/static/app.js" defer></script>
+    <script src="/static/idle-face.js?v=20260822-browblink1" defer></script>
+    <script src="/static/app.js?v=20260822-browblink1" defer></script>
   </body>
 </html>

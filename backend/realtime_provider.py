@@ -15,6 +15,20 @@ from google.genai import types
 
 logger = logging.getLogger("voice.provider")
 
+EXPRESSION_NAMES = (
+    "neutral",
+    "sassy",
+    "amused",
+    "skeptical",
+    "annoyed",
+    "mad",
+    "concerned",
+    "surprised",
+    "mischievous",
+    "serious",
+    "alert",
+)
+
 
 @dataclass(slots=True)
 class ProviderEvent:
@@ -43,9 +57,19 @@ class GeminiLiveProvider(RealtimeProvider):
         self.api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         self.model = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
         self.voice = os.environ.get("GEMINI_LIVE_VOICE", "Kore")
-        self.instructions = os.environ.get(
+        base_instructions = os.environ.get(
             "GEMINI_LIVE_INSTRUCTIONS",
             "You are a concise, friendly voice assistant. Reply naturally and briefly.",
+        )
+        self.instructions = (
+            f"{base_instructions}\n\n"
+            "Your name is Ada. You have a visible animated face. Use the "
+            "set_facial_expression tool to select the expression that best matches "
+            "your response and attitude. Call it once at the beginning of every spoken "
+            "reply, before speaking. You may update it again only if your tone changes "
+            "materially. Prefer neutral for ordinary replies; "
+            "use alert only for genuine urgency or warnings. Never describe or announce "
+            "the tool call to the user."
         )
         self._client: Any = None
         self._session_context: Any = None
@@ -73,16 +97,47 @@ class GeminiLiveProvider(RealtimeProvider):
                 "activity_handling": types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
                 "automatic_activity_detection": {
                     "disabled": False,
+                    # Speaker echo can otherwise look like a new user turn and
+                    # make Ada interrupt herself. LOW still supports barge-in,
+                    # but requires stronger evidence that speech has started.
                     "start_of_speech_sensitivity": (
-                        types.StartSensitivity.START_SENSITIVITY_HIGH
+                        types.StartSensitivity.START_SENSITIVITY_LOW
                     ),
                     "end_of_speech_sensitivity": (
                         types.EndSensitivity.END_SENSITIVITY_HIGH
                     ),
-                    "prefix_padding_ms": 100,
-                    "silence_duration_ms": 300,
+                    "prefix_padding_ms": 200,
+                    "silence_duration_ms": 500,
                 },
             },
+            # Native audio consumes context quickly. Sliding-window compression
+            # prevents an extended voice conversation from exhausting the
+            # session context while retaining recent conversational history.
+            "context_window_compression": types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            ),
+            "tools": [{
+                "function_declarations": [{
+                    "name": "set_facial_expression",
+                    "description": (
+                        "Changes Ada's visible facial expression without interrupting speech. "
+                        "Select the expression matching the tone of Ada's current response."
+                    ),
+                    "behavior": types.Behavior.NON_BLOCKING,
+                    "parameters_json_schema": {
+                        "type": "object",
+                        "properties": {
+                            "expression": {
+                                "type": "string",
+                                "enum": list(EXPRESSION_NAMES),
+                                "description": "The facial expression Ada should display.",
+                            }
+                        },
+                        "required": ["expression"],
+                        "additionalProperties": False,
+                    },
+                }]
+            }],
         }
         self._session_context = self._client.aio.live.connect(
             model=self.model,
@@ -107,6 +162,26 @@ class GeminiLiveProvider(RealtimeProvider):
 
         while not self._closed:
             async for message in self._session.receive():
+                tool_call = message.tool_call
+                if tool_call and tool_call.function_calls:
+                    function_responses = []
+                    for call in tool_call.function_calls:
+                        requested = (call.args or {}).get("expression")
+                        if call.name == "set_facial_expression" and requested in EXPRESSION_NAMES:
+                            yield ProviderEvent("expression", {"name": requested})
+                            result = {"output": f"Ada is now {requested}"}
+                        else:
+                            result = {"error": "Unsupported expression or function"}
+                        function_responses.append(types.FunctionResponse(
+                            id=call.id,
+                            name=call.name or "set_facial_expression",
+                            response=result,
+                            scheduling=types.FunctionResponseScheduling.SILENT,
+                        ))
+                    await self._session.send_tool_response(
+                        function_responses=function_responses
+                    )
+
                 content = message.server_content
                 if content is None:
                     continue
