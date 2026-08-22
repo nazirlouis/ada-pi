@@ -60,7 +60,14 @@ class FrontendContractTests(unittest.TestCase):
             "concerned", "surprised", "mischievous", "serious", "alert",
         ):
             self.assertIn(f'"{expression}"', animation)
-            self.assertIn(f".expression-{expression}", styles)
+            self.assertIn(f"#idle-face.expression-{expression}", styles)
+        for color in (
+            "#17dfff", "#ff3dbe", "#35ff9a", "#7d8cff", "#ff6b35",
+            "#ff2400", "#4a8fff", "#ffd43b", "#b45cff", "#d9f7ff", "#ff8618",
+        ):
+            self.assertIn(f"--face-color: {color}", styles)
+        self.assertIn("fill: var(--face-color)", styles)
+        self.assertIn("stroke: var(--face-highlight)", styles)
         self.assertIn('round:', animation)
         self.assertIn('wide:', animation)
         self.assertIn('path.setAttribute("d"', animation)
@@ -104,6 +111,19 @@ class FrontendContractTests(unittest.TestCase):
     def test_no_frontend_image_assets_remain(self) -> None:
         assets = ROOT / "frontend/assets"
         self.assertFalse(assets.exists() and any(assets.rglob("*.*")))
+
+    def test_pironman_drawer_uses_ada_backend_and_safe_controls(self) -> None:
+        html = (ROOT / "frontend/index.html").read_text()
+        app = (ROOT / "frontend/app.js").read_text()
+        backend = (ROOT / "backend/main.py").read_text()
+        self.assertIn('id="hardware-panel"', html)
+        self.assertIn('fetch("/api/pironman"', app)
+        self.assertIn('fetch("/api/pironman/controls"', app)
+        self.assertIn('fetch("/api/pironman/expression"', app)
+        self.assertIn('@app.get("/api/pironman")', backend)
+        self.assertIn('@app.patch("/api/pironman/controls")', backend)
+        self.assertIn('@app.post("/api/pironman/expression")', backend)
+        self.assertNotIn('updateHardware("shutdown"', app)
 
 
 if __name__ == "__main__":

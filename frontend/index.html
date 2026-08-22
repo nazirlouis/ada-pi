@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#000000">
     <title>ADA Pi</title>
-    <link rel="stylesheet" href="/static/style.css?v=20260822-video1">
+    <link rel="stylesheet" href="/static/style.css?v=20260822-expression-colors2">
   </head>
   <body>
     <main id="face-stage" aria-label="ADA voice assistant. Tap to connect.">
@@ -48,6 +48,7 @@
       </svg>
 
       <div id="session-controls" aria-label="Session controls">
+        <button id="hardware-toggle" aria-controls="hardware-panel" aria-expanded="false">Hardware</button>
         <button id="disconnect" disabled>Disconnect</button>
         <button id="exit" class="danger">Exit</button>
       </div>
@@ -56,8 +57,27 @@
       <div id="connection-status" class="sr-only" aria-live="polite">Disconnected</div>
       <div id="microphone-status" class="sr-only">Off</div>
       <div id="log" class="sr-only" role="log" aria-live="polite"></div>
+      <aside id="hardware-panel" aria-label="Pironman hardware" aria-hidden="true">
+        <header><div><span class="eyebrow">PIRONMAN 5 PRO MAX</span><h2>Hardware</h2></div><button id="hardware-close" aria-label="Close hardware panel">×</button></header>
+        <div id="hardware-state" class="hardware-state">Connecting…</div>
+        <div id="pm-telemetry" aria-label="Live telemetry"></div>
+        <section class="hardware-controls" aria-label="Case controls">
+          <label class="switch-row"><span>Case lighting</span><input id="pm-rgb-enable" type="checkbox"><i></i></label>
+          <label><span>Color</span><input id="pm-rgb-color" type="color" value="#17dfff"></label>
+          <label><span>Brightness <output id="pm-brightness-value">50%</output></span><input id="pm-rgb-brightness" type="range" min="0" max="100" value="50"></label>
+          <label><span>Effect</span><select id="pm-rgb-style"><option value="breathing">Breathing</option><option value="solid">Solid</option><option value="rainbow">Rainbow</option><option value="flow">Flow</option></select></label>
+          <label data-config="rgb_speed"><span>Effect speed <output id="pm-speed-value">50%</output></span><input id="pm-rgb-speed" type="range" min="0" max="100" value="50"></label>
+          <label class="switch-row"><span>OLED display</span><input id="pm-oled-enable" type="checkbox"><i></i></label>
+          <label data-config="oled_rotation"><span>OLED rotation</span><select id="pm-oled-rotation"><option value="0">0°</option><option value="180">180°</option></select></label>
+          <label data-config="oled_sleep_timeout"><span>OLED sleep (seconds)</span><input id="pm-oled-sleep" type="number" min="0" max="3600" step="1"></label>
+          <label data-config="temperature_unit"><span>Temperature unit</span><select id="pm-temperature-unit"><option value="C">Celsius</option><option value="F">Fahrenheit</option></select></label>
+          <label data-config="gpio_fan_mode"><span>Fan profile</span><select id="pm-fan-mode"><option value="0">Always on</option><option value="1">Performance</option><option value="2">Cool</option><option value="3">Balanced</option><option value="4">Silent</option></select></label>
+          <label data-config="gpio_fan_led"><span>Fan LEDs</span><select id="pm-fan-led"><option value="follow">Follow fan</option><option value="on">Always on</option><option value="off">Off</option></select></label>
+        </section>
+        <a id="pm-dashboard-link" href="http://127.0.0.1:34001/small" target="_blank" rel="noopener">Open full dashboard</a>
+      </aside>
     </main>
     <script src="/static/idle-face.js?v=20260822-video1" defer></script>
-    <script src="/static/app.js?v=20260822-activitycam1" defer></script>
+    <script src="/static/app.js?v=20260822-pironman3" defer></script>
   </body>
 </html>

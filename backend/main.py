@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .realtime_provider import create_provider
+from .pironman import EXPRESSION_COLORS, PironmanClient, PironmanError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,6 +29,44 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 app = FastAPI(title="Pi Full-Duplex Voice Prototype")
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
+pironman = PironmanClient()
+oled_guard_task: asyncio.Task[None] | None = None
+
+
+async def sync_expression_lighting(expression: str) -> None:
+    """Best-effort case lighting sync that never disrupts the voice session."""
+    try:
+        await pironman.set_expression_lighting(expression)
+    except PironmanError as exc:
+        logger.warning("could not sync Pironman lighting for %s: %s", expression, exc)
+
+
+async def keep_oled_awake() -> None:
+    """Enforce the always-on OLED policy while Ada is running."""
+    while True:
+        try:
+            changed = await pironman.ensure_oled_on()
+            if changed:
+                logger.info("Pironman OLED enabled with sleep disabled")
+        except PironmanError as exc:
+            logger.warning("could not enforce Pironman OLED policy: %s", exc)
+        await asyncio.sleep(60)
+
+
+@app.on_event("startup")
+async def start_oled_guard() -> None:
+    global oled_guard_task
+    oled_guard_task = asyncio.create_task(keep_oled_awake())
+
+
+@app.on_event("shutdown")
+async def stop_oled_guard() -> None:
+    global oled_guard_task
+    if oled_guard_task is not None:
+        oled_guard_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await oled_guard_task
+        oled_guard_task = None
 
 
 @app.middleware("http")
@@ -42,6 +81,49 @@ async def disable_frontend_cache(request, call_next):
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(FRONTEND / "index.html")
+
+
+@app.get("/api/pironman")
+async def pironman_snapshot() -> dict[str, object]:
+    """Return hardware telemetry and user-facing display settings."""
+    try:
+        return await pironman.snapshot()
+    except PironmanError as exc:
+        return {
+            "online": False,
+            "dashboard_url": f"{pironman.base_url}/small",
+            "error": str(exc),
+            "data": {},
+            "config": {},
+        }
+
+
+@app.patch("/api/pironman/controls")
+async def update_pironman_controls(request: Request) -> dict[str, object]:
+    """Update the allow-listed, reversible case controls."""
+    try:
+        controls = await request.json()
+        return await pironman.update_controls(controls)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except PironmanError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/pironman/expression")
+async def update_pironman_expression(request: Request) -> dict[str, str]:
+    """Apply case lighting for a locally selected Ada expression."""
+    try:
+        payload = await request.json()
+        expression = payload.get("expression") if isinstance(payload, dict) else None
+        if expression not in EXPRESSION_COLORS:
+            raise ValueError("Unsupported expression")
+        await pironman.set_expression_lighting(expression)
+        return {"expression": expression, "status": "applied"}
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except PironmanError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/shutdown", status_code=202)
@@ -195,6 +277,10 @@ async def voice_socket(browser: WebSocket) -> None:
                 elif event.type == "response_started":
                     forward_audio = True
                     await send_json(browser, event.type)
+                elif event.type == "expression":
+                    expression = str(event.data.get("name", "neutral"))
+                    asyncio.create_task(sync_expression_lighting(expression))
+                    await send_json(browser, event.type, **event.data)
                 else:
                     await send_json(browser, event.type, **event.data)
         finally:

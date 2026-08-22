@@ -9,11 +9,34 @@ body { font-family: system-ui, sans-serif; user-select: none; touch-action: mani
 #session-controls button:active { background: rgba(8,126,242,.42); }
 #session-controls button:disabled { opacity: .32; }
 #session-controls .danger { border-color: #ff7a18; color: #ffb16f; }
+#hardware-panel { position: fixed; z-index: 30; top: 0; right: 0; width: min(430px,100vw); height: 100%; padding: 24px; overflow-y: auto; color: #c9fbff; background: rgba(0,12,19,.97); border-left: 1px solid rgba(23,223,255,.45); box-shadow: -18px 0 60px rgba(0,0,0,.7); transform: translateX(105%); transition: transform 220ms ease; cursor: auto; }
+#hardware-panel.open { transform: translateX(0); }
+#hardware-panel header { display: flex; align-items: flex-start; justify-content: space-between; }
+#hardware-panel h2 { margin: 2px 0 12px; color: #fff; font-size: 30px; }
+#hardware-panel .eyebrow { color: #17dfff; font-size: 11px; letter-spacing: .16em; }
+#hardware-close { width: 48px; height: 48px; border: 0; color: #8eefff; background: transparent; font-size: 36px; }
+.hardware-state { margin-bottom: 16px; color: #75dce7; font-size: 13px; }
+.hardware-state.offline { color: #ff9d52; }
+.metric-section h3 { margin: 18px 0 8px; color: #17dfff; font-size: 12px; letter-spacing: .11em; text-transform: uppercase; }
+.telemetry { display: grid; grid-template-columns: repeat(2,1fr); gap: 9px; }
+.telemetry div { min-height: 72px; padding: 12px; border: 1px solid rgba(8,126,242,.28); border-radius: 10px; background: rgba(5,35,48,.72); }
+.telemetry span,.hardware-controls label>span { display: block; color: #73b8c0; font-size: 12px; }
+.telemetry strong { display: block; margin-top: 7px; overflow-wrap: anywhere; color: #eaffff; font-size: 18px; }
+.hardware-controls { display: grid; gap: 15px; margin: 20px 0; }
+.hardware-controls label { display: grid; gap: 8px; }
+.hardware-controls label>span output { float: right; color: #b6faff; }
+.hardware-controls input[type="range"] { width: 100%; accent-color: #17dfff; }
+.hardware-controls input[type="color"],.hardware-controls input[type="number"],.hardware-controls select { width: 100%; min-height: 44px; padding: 6px; border: 1px solid #087ef2; border-radius: 8px; color: #c9fbff; background: #041923; }
+.hardware-controls [data-config].unavailable { display: none; }
+.switch-row { grid-template-columns: 1fr auto; align-items: center; min-height: 44px; }
+.switch-row input { width: 24px; height: 24px; accent-color: #17dfff; }
+#pm-dashboard-link { display: block; padding: 13px; border: 1px solid rgba(23,223,255,.5); border-radius: 9px; color: #9af5ff; text-align: center; text-decoration: none; }
+body.hardware-open #idle-face,body.hardware-open #expression-controls { opacity: .32; }
 #expression-controls { position: fixed; left: 18px; top: 18px; z-index: 10; display: grid; grid-template-columns: repeat(6,minmax(76px,1fr)); gap: 6px; max-width: min(66vw,590px); cursor: auto; opacity: .55; transition: opacity 180ms ease; }
 #expression-controls:hover,#expression-controls:focus-within { opacity: 1; }
 #expression-controls button { min-height: 34px; padding: 6px 8px; border: 1px solid rgba(8,126,242,.75); border-radius: 7px; color: #8eefff; background: rgba(0,18,28,.9); font: 600 11px/1 system-ui,sans-serif; text-transform: capitalize; }
 #expression-controls button.active { color: #001015; background: #17dfff; box-shadow: 0 0 14px rgba(23,223,255,.65); }
-#idle-face { --gaze-x: 0px; --gaze-y: 0px; --blink-left: 1; --blink-right: 1; --brow-left-lift: 0px; --brow-right-lift: 0px; --speech-level: 0; display: block; width: 100%; height: 100%; }
+#idle-face { --gaze-x: 0px; --gaze-y: 0px; --blink-left: 1; --blink-right: 1; --brow-left-lift: 0px; --brow-right-lift: 0px; --speech-level: 0; --face-color: #17dfff; --face-edge: #087ef2; --face-aura: #10dfff; --face-highlight: #e5ffff; display: block; width: 100%; height: 100%; }
 #face-rig { animation: face-breathing 6.4s ease-in-out infinite; transform-box: view-box; transform-origin: center; }
 .eye {
   transform-box: fill-box;
@@ -32,10 +55,10 @@ body { font-family: system-ui, sans-serif; user-select: none; touch-action: mani
 .eye.is-blinking { transition-duration: 90ms; transition-timing-function: ease-in; }
 .expression-brows { transform: translate(calc(var(--gaze-x) * .82), calc(var(--gaze-y) * .7)); transition: transform 640ms cubic-bezier(.22,.75,.2,1); will-change: transform; }
 .eye-expression,.mouth-expression { transform-box: fill-box; transform-origin: center; transition: transform 420ms cubic-bezier(.2,.8,.2,1); }
-.expression-brow { fill: none; stroke: #17dfff; stroke-width: 9; stroke-linecap: round; opacity: 0; transform-box: fill-box; transform-origin: center; transition: opacity 240ms ease, stroke 360ms ease, transform 90ms ease-in; }
+.expression-brow { fill: none; stroke: var(--face-color); stroke-width: 9; stroke-linecap: round; opacity: 0; transform-box: fill-box; transform-origin: center; transition: opacity 240ms ease, stroke 360ms ease, transform 90ms ease-in; }
 .left-brow { transform: translateY(var(--brow-left-lift)); }
 .right-brow { transform: translateY(var(--brow-right-lift)); }
-.eye-panel,.mouth { fill: #17dfff; stroke: #087ef2; stroke-width: 4; stroke-linejoin: round; }
+.eye-panel,.mouth { fill: var(--face-color); stroke: var(--face-edge); stroke-width: 4; stroke-linejoin: round; transition: fill 360ms ease, stroke 360ms ease; }
 .mouth-track {
   transform-box: fill-box;
   transform-origin: center;
@@ -45,7 +68,7 @@ body { font-family: system-ui, sans-serif; user-select: none; touch-action: mani
 }
 .mouth,.mouth-aura,.mouth-shimmer { transition: d 72ms cubic-bezier(.2,.75,.3,1); }
 .mouth { animation: mouth-light 3.1s ease-in-out infinite; }
-.mouth-aura { fill: #10dfff; opacity: .34; filter: blur(15px); animation: mouth-aura 3.1s ease-in-out infinite; }
+.mouth-aura { fill: var(--face-aura); opacity: .34; filter: blur(15px); animation: mouth-aura 3.1s ease-in-out infinite; }
 .is-speaking .mouth { animation-duration: .62s; }
 .is-speaking .mouth-aura { animation-duration: .62s; filter: blur(19px); }
 .is-connecting #face-rig { animation: connect-rig 1.45s ease-in-out infinite; }
@@ -58,6 +81,17 @@ body { font-family: system-ui, sans-serif; user-select: none; touch-action: mani
 /* Expressions only reshape the inner features. Outer eye groups retain gaze
    and blink transforms, while speech continues to own mouth path geometry. */
 .expression-neutral .eye-expression,.expression-neutral .mouth-expression { transform: none; }
+#idle-face.expression-neutral { --face-color: #17dfff; --face-edge: #087ef2; --face-aura: #10dfff; --face-highlight: #e5ffff; }
+#idle-face.expression-sassy { --face-color: #ff3dbe; --face-edge: #c51c88; --face-aura: #ff3dbe; --face-highlight: #ffe3f7; }
+#idle-face.expression-amused { --face-color: #35ff9a; --face-edge: #0caf63; --face-aura: #20ee82; --face-highlight: #e1fff0; }
+#idle-face.expression-skeptical { --face-color: #7d8cff; --face-edge: #4256da; --face-aura: #6678ff; --face-highlight: #eef0ff; }
+#idle-face.expression-annoyed { --face-color: #ff6b35; --face-edge: #d43d16; --face-aura: #ff5425; --face-highlight: #fff0e9; }
+#idle-face.expression-mad { --face-color: #ff2400; --face-edge: #ff7a32; --face-aura: #ff2400; --face-highlight: #ffe0d4; }
+#idle-face.expression-concerned { --face-color: #4a8fff; --face-edge: #1762d6; --face-aura: #347dff; --face-highlight: #e5efff; }
+#idle-face.expression-surprised { --face-color: #ffd43b; --face-edge: #dc9f00; --face-aura: #ffc928; --face-highlight: #fff9d7; }
+#idle-face.expression-mischievous { --face-color: #b45cff; --face-edge: #7625c4; --face-aura: #a642ff; --face-highlight: #f4e5ff; }
+#idle-face.expression-serious { --face-color: #d9f7ff; --face-edge: #6ba9bf; --face-aura: #aeefff; --face-highlight: #ffffff; }
+#idle-face.expression-alert { --face-color: #ff8618; --face-edge: #ffb24a; --face-aura: #ff6a00; --face-highlight: #fff0d5; }
 .expression-sassy .left-eye .eye-expression { transform: translateY(13px) scaleY(.55) rotate(-2deg); }
 .expression-sassy .right-eye .eye-expression { transform: translateY(-2px) scaleY(.98); }
 .expression-sassy .mouth-expression { transform: rotate(-5deg) translateX(13px) scaleX(.96); }
@@ -72,9 +106,6 @@ body { font-family: system-ui, sans-serif; user-select: none; touch-action: mani
 .expression-mad .left-eye .eye-expression { transform: translateY(12px) scaleY(.48) rotate(5deg); }
 .expression-mad .right-eye .eye-expression { transform: translateY(12px) scaleY(.48) rotate(-5deg); }
 .expression-mad .mouth-expression { transform: translateY(3px) scale(.9,.76); }
-.expression-mad .eye-panel,.expression-mad .mouth { fill: #ff3c20; stroke: #ff7a32; }
-.expression-mad .mouth-aura { fill: #ff2400; }
-.expression-mad .shimmer-line { stroke: #ffe0d4; }
 .expression-concerned .left-eye .eye-expression { transform: translateY(2px) rotate(-3.5deg) scaleY(.88); }
 .expression-concerned .right-eye .eye-expression { transform: translateY(2px) rotate(3.5deg) scaleY(.88); }
 .expression-concerned .mouth-expression { transform: scaleX(.92); }
@@ -87,11 +118,6 @@ body { font-family: system-ui, sans-serif; user-select: none; touch-action: mani
 .expression-serious .mouth-expression { transform: scaleX(1.02); }
 .expression-alert .left-eye .eye-expression { transform: translateY(5px) scaleY(.68) rotate(2deg); }
 .expression-alert .right-eye .eye-expression { transform: translateY(5px) scaleY(.68) rotate(-2deg); }
-.expression-alert .eye-panel,.expression-alert .mouth { fill: #ff8618; stroke: #ffb24a; }
-.expression-alert .mouth-aura { fill: #ff6a00; }
-.expression-alert .shimmer-line { stroke: #fff0d5; }
-.expression-alert .expression-brow { stroke: #ff9a28; }
-.expression-mad .expression-brow { stroke: #ff3c20; }
 .expression-alert .eye,.expression-alert .mouth { animation-duration: 1.15s; }
 
 /* Speech geometry stays expressive instead of replacing the emotion with the
@@ -116,13 +142,14 @@ body { font-family: system-ui, sans-serif; user-select: none; touch-action: mani
 .is-speaking.expression-alert .mouth-expression { transform: scale(.92,.78); }
 .shimmer-line {
   fill: none;
-  stroke: #e5ffff;
+  stroke: var(--face-highlight);
   stroke-width: 7;
   stroke-linecap: round;
   stroke-dasharray: .1 .9;
   opacity: 0;
   animation: edge-shimmer 14s linear infinite;
   pointer-events: none;
+  transition: stroke 360ms ease;
 }
 .right-eye .shimmer-line { animation-delay: .32s; }
 .mouth-shimmer { stroke-width: 5; animation-delay: .64s; }
@@ -148,6 +175,6 @@ body { font-family: system-ui, sans-serif; user-select: none; touch-action: mani
   100% { opacity: 0; stroke-dashoffset: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #face-rig,.eye,.eye-expression,.expression-brow,.mouth-expression,.mouth,.mouth-aura,.shimmer-line { animation: none; transition: none; }
+  #face-rig,.eye,.eye-expression,.expression-brow,.mouth-expression,.mouth,.mouth-aura,.shimmer-line,#hardware-panel { animation: none; transition: none; }
   .mouth-track { transition: none; }
 }

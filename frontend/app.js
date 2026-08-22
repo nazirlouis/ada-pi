@@ -7,6 +7,11 @@ const connectionStatus = document.querySelector("#connection-status");
 const microphoneStatus = document.querySelector("#microphone-status");
 const logElement = document.querySelector("#log");
 const faceStage = document.querySelector("#face-stage");
+const hardwarePanel = document.querySelector("#hardware-panel");
+const hardwareToggle = document.querySelector("#hardware-toggle");
+const hardwareClose = document.querySelector("#hardware-close");
+let hardwareTimer = null;
+let hardwareConfigLoaded = false;
 
 let socket = null;
 let stream = null;
@@ -21,6 +26,151 @@ let localSpeechActive = false;
 let speechAboveFrames = 0;
 let speechBelowFrames = 0;
 let microphoneNoiseFloor = .004;
+
+const metricGroups = [
+  ["Power & battery", /battery|voltage|current|power|charging|input_plugged|power_source/i],
+  ["Cooling & temperature", /temperature|fan|thermal/i],
+  ["Storage", /disk|storage|filesystem|mount/i],
+  ["Performance", /cpu|gpu|memory|ram|load|uptime/i],
+  ["Network", /network|ip_address|mac_address|ethernet|wifi|upload|download/i],
+];
+
+function flattenMetrics(value, prefix = "", output = {}) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [key, child] of Object.entries(value)) flattenMetrics(child, prefix ? `${prefix}.${key}` : key, output);
+  } else if (Array.isArray(value)) {
+    value.forEach((child, index) => flattenMetrics(child, `${prefix}.${index + 1}`, output));
+  } else if (prefix && value !== null && value !== undefined) output[prefix] = value;
+  return output;
+}
+
+function metricLabel(key) {
+  return key.split(".").map(part => part.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase())).join(" · ");
+}
+
+function metricValue(key, value) {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value !== "number") return String(value);
+  const rounded = Math.round(value * 100) / 100;
+  if (/temperature/i.test(key)) return `${rounded}°`;
+  if (/percentage|percent|usage|fan_speed/i.test(key)) return `${rounded}%`;
+  if (/voltage/i.test(key)) return `${rounded} V`;
+  if (/current/i.test(key)) return `${rounded} A`;
+  if (/power/i.test(key) && !/source/i.test(key)) return `${rounded} W`;
+  return String(rounded);
+}
+
+function renderTelemetry(data) {
+  const flat = flattenMetrics(data);
+  const grouped = new Map(metricGroups.map(([name]) => [name, []]));
+  grouped.set("System", []);
+  for (const [key, value] of Object.entries(flat)) {
+    const group = metricGroups.find(([, pattern]) => pattern.test(key))?.[0] || "System";
+    grouped.get(group).push([key, value]);
+  }
+  const root = document.querySelector("#pm-telemetry");
+  root.replaceChildren();
+  for (const [name, metrics] of grouped) {
+    if (!metrics.length) continue;
+    const section = document.createElement("section");
+    section.className = "metric-section";
+    const heading = document.createElement("h3");
+    heading.textContent = name;
+    const grid = document.createElement("div");
+    grid.className = "telemetry";
+    for (const [key, value] of metrics) {
+      const card = document.createElement("div");
+      const label = document.createElement("span");
+      const strong = document.createElement("strong");
+      label.textContent = metricLabel(key);
+      strong.textContent = metricValue(key, value);
+      card.append(label, strong);
+      grid.append(card);
+    }
+    section.append(heading, grid);
+    root.append(section);
+  }
+  if (!root.children.length) root.textContent = "No telemetry reported by this Pironman configuration.";
+}
+
+function setHardwareOpen(open) {
+  hardwarePanel.classList.toggle("open", open);
+  hardwarePanel.setAttribute("aria-hidden", String(!open));
+  hardwareToggle.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("hardware-open", open);
+  clearInterval(hardwareTimer);
+  hardwareTimer = open ? setInterval(refreshHardware, 3000) : null;
+  if (open) refreshHardware();
+}
+
+async function refreshHardware() {
+  const state = document.querySelector("#hardware-state");
+  try {
+    const response = await fetch("/api/pironman", { cache: "no-store" });
+    const snapshot = await response.json();
+    state.textContent = snapshot.online ? "Online · live updates every 3 seconds" : (snapshot.error || "Dashboard offline");
+    state.classList.toggle("offline", !snapshot.online);
+    document.querySelector("#pm-dashboard-link").href = snapshot.dashboard_url;
+    if (!snapshot.online) return;
+    const data = snapshot.data || {};
+    const config = snapshot.config || {};
+    renderTelemetry(data);
+    if (!hardwareConfigLoaded) {
+      document.querySelector("#pm-rgb-enable").checked = config.rgb_enable ?? false;
+      document.querySelector("#pm-oled-enable").checked = config.oled_enable ?? false;
+      if (/^#[0-9a-f]{6}$/i.test(config.rgb_color || "")) document.querySelector("#pm-rgb-color").value = config.rgb_color;
+      const brightness = Number(config.rgb_brightness ?? 50);
+      document.querySelector("#pm-rgb-brightness").value = brightness;
+      document.querySelector("#pm-brightness-value").value = `${brightness}%`;
+      const style = document.querySelector("#pm-rgb-style");
+      if (config.rgb_style && ![...style.options].some(option => option.value === config.rgb_style)) style.add(new Option(config.rgb_style, config.rgb_style));
+      if (config.rgb_style) style.value = config.rgb_style;
+      document.querySelector("#pm-rgb-speed").value = config.rgb_speed ?? 50;
+      document.querySelector("#pm-speed-value").value = `${config.rgb_speed ?? 50}%`;
+      document.querySelector("#pm-oled-rotation").value = config.oled_rotation ?? 0;
+      document.querySelector("#pm-oled-sleep").value = config.oled_sleep_timeout ?? 0;
+      document.querySelector("#pm-temperature-unit").value = config.temperature_unit ?? "C";
+      document.querySelector("#pm-fan-mode").value = config.gpio_fan_mode ?? 3;
+      document.querySelector("#pm-fan-led").value = config.gpio_fan_led ?? "follow";
+      document.querySelectorAll("[data-config]").forEach(element => element.classList.toggle("unavailable", !(element.dataset.config in config)));
+      hardwareConfigLoaded = true;
+    }
+  } catch (error) {
+    state.textContent = `Pironman unavailable · ${error.message}`;
+    state.classList.add("offline");
+  }
+}
+
+async function updateHardware(control, value) {
+  const state = document.querySelector("#hardware-state");
+  state.textContent = "Applying…";
+  try {
+    const response = await fetch("/api/pironman/controls", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [control]: value }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Control update failed");
+    state.textContent = "Online · setting applied";
+  } catch (error) {
+    state.textContent = error.message;
+    state.classList.add("offline");
+    hardwareConfigLoaded = false;
+  }
+}
+
+async function syncManualExpression(expression) {
+  try {
+    const response = await fetch("/api/pironman/expression", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expression }),
+    });
+    if (!response.ok) {
+      const result = await response.json();
+      throw new Error(result.detail || "Expression lighting failed");
+    }
+  } catch (error) {
+    console.warn("Could not sync manual expression lighting", error);
+  }
+}
 
 function logLine(role, text, className = "") {
   const line = document.createElement("p");
@@ -292,10 +442,29 @@ exitButton.addEventListener("click", async () => {
     exitButton.disabled = false;
   }
 });
+hardwareToggle.addEventListener("click", () => setHardwareOpen(true));
+hardwareClose.addEventListener("click", () => setHardwareOpen(false));
+document.querySelector("#expression-controls").addEventListener("click", event => {
+  const expression = event.target.closest("button")?.dataset.expression;
+  if (expression) syncManualExpression(expression);
+});
+document.querySelector("#pm-rgb-enable").addEventListener("change", event => updateHardware("rgb_enable", event.target.checked));
+document.querySelector("#pm-oled-enable").addEventListener("change", event => updateHardware("oled_enable", event.target.checked));
+document.querySelector("#pm-rgb-color").addEventListener("change", event => updateHardware("rgb_color", event.target.value));
+document.querySelector("#pm-rgb-style").addEventListener("change", event => updateHardware("rgb_style", event.target.value));
+document.querySelector("#pm-rgb-brightness").addEventListener("input", event => { document.querySelector("#pm-brightness-value").value = `${event.target.value}%`; });
+document.querySelector("#pm-rgb-brightness").addEventListener("change", event => updateHardware("rgb_brightness", Number(event.target.value)));
+document.querySelector("#pm-rgb-speed").addEventListener("input", event => { document.querySelector("#pm-speed-value").value = `${event.target.value}%`; });
+document.querySelector("#pm-rgb-speed").addEventListener("change", event => updateHardware("rgb_speed", Number(event.target.value)));
+document.querySelector("#pm-oled-rotation").addEventListener("change", event => updateHardware("oled_rotation", Number(event.target.value)));
+document.querySelector("#pm-oled-sleep").addEventListener("change", event => updateHardware("oled_sleep_timeout", Number(event.target.value)));
+document.querySelector("#pm-temperature-unit").addEventListener("change", event => updateHardware("temperature_unit", event.target.value));
+document.querySelector("#pm-fan-mode").addEventListener("change", event => updateHardware("gpio_fan_mode", Number(event.target.value)));
+document.querySelector("#pm-fan-led").addEventListener("change", event => updateHardware("gpio_fan_led", event.target.value));
 
 // The full-screen idle face is the connection control. This preserves the
 // user gesture Chromium requires for microphone and Web Audio access.
 faceStage.addEventListener("pointerdown", (event) => {
-  if (event.target.closest("#session-controls, #expression-controls")) return;
+  if (event.target.closest("#session-controls, #expression-controls, #hardware-panel")) return;
   if (!socket && !connectButton.disabled) connect();
 });

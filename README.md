@@ -15,6 +15,9 @@ lightweight animated SVG face designed for a 4.3-inch landscape touchscreen.
   neon glow, and audio-amplitude-driven mouth shapes.
 - Full-screen Chromium kiosk startup and coordinated browser/backend shutdown.
 - Sliding-window context compression for extended conversations.
+- Native Pironman 5 hardware drawer with live telemetry and validated RGB/OLED controls.
+- Expression-synchronized case lighting, including red for Mad and orange for Alert.
+- Always-on OLED guard that disables display sleep while Ada is running.
 
 ## Requirements
 
@@ -61,6 +64,7 @@ GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
 GEMINI_LIVE_VOICE=Kore
 GEMINI_LIVE_INSTRUCTIONS="You are a concise, friendly voice assistant."
 GEMINI_VIDEO_RESOLUTION=high
+PIRONMAN_URL=http://127.0.0.1:34001
 ```
 
 The API key stays in the backend and is never sent to Chromium. Create a key in
@@ -97,6 +101,59 @@ ADA_HOST=127.0.0.1 ADA_PORT=8080 ./start.sh
 
 Do not open `frontend/index.html` as a `file://` URL. Chromium microphone capture
 requires a secure context; `localhost` qualifies.
+
+## Pironman 5 integration
+
+Ada uses the locally running SunFounder dashboard API instead of accessing the
+GPIO hardware in parallel with Pironman's service. The default API address is
+`http://127.0.0.1:34001`; override it with `PIRONMAN_URL` if necessary. Keep the
+Pironman background service running even if its standalone browser autostart is
+disabled.
+
+Tap **Hardware** in Ada's lower-right controls to open the native hardware
+drawer. While it is open, Ada refreshes telemetry every three seconds and
+automatically organizes every value reported by the installed Pironman variant:
+
+- CPU, GPU, memory, load, uptime, and temperatures.
+- Disks, filesystems, mounted storage, and usage.
+- Fan state, speed, and thermal data.
+- Battery percentage, voltage, current, charging state, and power source when a
+  supported UPS or PiPower device reports them.
+- Input/output voltage, current, and power.
+- Network, IP, and MAC information.
+- Any additional scalar telemetry introduced by future dashboard versions.
+
+Available controls are detected from the installed configuration. Depending on
+the Pironman variant, the drawer can expose:
+
+- RGB enable, color, brightness, effect, and effect speed.
+- OLED enable, rotation, and sleep timeout.
+- Celsius/Fahrenheit selection.
+- Fan profile and fan-LED behavior.
+- A link to the complete SunFounder dashboard for advanced administration.
+
+Ada's backend validates each control and calls the dashboard's versioned
+`/api/v1.0/` endpoints. It never exposes or proxies shutdown, reboot, service
+restart, power-failure simulation, hardware-pin changes, or battery shutdown
+thresholds. SMTP credentials and unrelated configuration also remain inside the
+Pironman service and are not sent to Chromium.
+
+### Always-on OLED
+
+While Ada is running, a background guard checks the OLED once per minute and
+enforces `oled_enable=true` with `oled_sleep_timeout=0`. It writes only when a
+setting needs correction and does not change any Pi power behavior.
+
+### Disable the standalone Pironman browser
+
+Ada does not require Pironman's separate dashboard window. Disable only its
+desktop autostart entry while retaining `pironman5.service`. A disabled entry at
+`~/.config/autostart/pironman5-dashboard.desktop` should contain:
+
+```ini
+Hidden=true
+X-GNOME-Autostart-enabled=false
+```
 
 ## Vision modes
 
@@ -139,8 +196,30 @@ surprised, mischievous, serious, alert
 
 The backend validates the function call and forwards a small expression event to
 the browser. Expression geometry remains independent of gaze, blinking, glow,
-and speech amplitude, so every face can continue talking naturally. Alert uses
-safety orange and Mad uses red; the other states retain the cyan visual system.
+and speech amplitude, so every face can continue talking naturally. The manual
+test buttons use the same expression path.
+
+Each expression changes Ada's eyes, mouth, eyebrows, aura, shimmer, and Pironman
+case LEDs to the same palette:
+
+| Expression | Color | Hex |
+| --- | --- | --- |
+| Neutral | Cyan | `#17dfff` |
+| Sassy | Pink | `#ff3dbe` |
+| Amused | Green | `#35ff9a` |
+| Skeptical | Violet blue | `#7d8cff` |
+| Annoyed | Orange red | `#ff6b35` |
+| Mad | Red | `#ff2400` |
+| Concerned | Blue | `#4a8fff` |
+| Surprised | Yellow | `#ffd43b` |
+| Mischievous | Purple | `#b45cff` |
+| Serious | Pale cyan | `#d9f7ff` |
+| Alert | Safety orange | `#ff8618` |
+
+Case synchronization sends one latency-sensitive color request per expression.
+For the quickest visible change, configure the Pironman RGB effect as **Solid**.
+Lighting failures are logged without delaying Ada's animation, audio, or Gemini
+session.
 
 ## Data flow
 
@@ -162,6 +241,12 @@ Vision
   rpicam-vid (MJPEG 640x480 at 1 FPS)
   -> validated JPEG frame
   -> Gemini Live video input
+
+Pironman
+  Pironman service on port 34001
+  -> Ada backend validation and credential filtering
+  -> live hardware drawer and safe controls
+  -> expression color synchronization
 ```
 
 The camera is captured natively by the backend, avoiding Chromium/PipeWire camera
@@ -234,6 +319,30 @@ native camera capture is unavailable.
 
 `DEPRECATED_ENDPOINT` messages from Chromium's GCM registration are unrelated to
 Gemini, microphone capture, and camera streaming.
+
+### Pironman drawer is offline
+
+Confirm the background service and API are available:
+
+```bash
+systemctl status pironman5.service
+curl http://127.0.0.1:34001/api/v1.0/test
+```
+
+The expected API response contains `"status":true`. If Pironman runs elsewhere,
+set `PIRONMAN_URL` in `.env` and restart Ada.
+
+### Case color does not follow the face
+
+Set the Pironman RGB effect to **Solid**, confirm case lighting is enabled, and
+tap a manual expression button. Ada's log should show:
+
+```text
+POST /api/pironman/expression HTTP/1.1" 200 OK
+```
+
+A `503` response means Ada reached its own expression endpoint but the upstream
+Pironman API rejected or could not complete the color update.
 
 ### API authentication errors
 
