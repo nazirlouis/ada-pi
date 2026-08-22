@@ -1,0 +1,22 @@
+:root { color-scheme: dark; background: #000; }
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+body { font-family: system-ui, sans-serif; touch-action: manipulation; user-select: none; }
+#ada-stage { --cyan:#69f4ff; --bright:#d9ffff; --dim:#087e99; position:fixed; inset:0; overflow:hidden; cursor:none; background:radial-gradient(ellipse at 50% 52%,#031117 0%,#000 57%); }
+#particle-field { position:absolute; inset:0; width:100%; height:100%; }
+#ada-face { position:absolute; inset:0; width:100%; height:100%; filter:saturate(1.06); animation:breathe 5.8s ease-in-out infinite; }
+.face-lines,.aura,.circuit-marks { fill:none; stroke:var(--cyan); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; transition:stroke .35s ease,opacity .35s ease,filter .35s ease; }
+.face-lines { filter:url(#soft-glow); }.aura { opacity:.17; stroke-width:1.2; filter:url(#wide-glow); }.circuit-marks { opacity:.42; stroke-width:1.3; }
+.fine { opacity:.5; stroke-width:1.1; stroke-dasharray:2 7; }.nose-light { opacity:.28; }
+.sclera { fill:#b7fbff; fill-opacity:.16; stroke:#b9ffff; stroke-width:1.4; }.iris { fill:url(#iris-fill); stroke:var(--bright); stroke-width:1.5; filter:url(#soft-glow); }.pupil { fill:#000; stroke:#9effff; stroke-width:.8; }.eye-glint { fill:#fff; stroke:none; }
+.gaze { transition:transform .22s cubic-bezier(.2,.8,.2,1); }.eyelid { transition:transform .2s ease,stroke .3s ease; transform-box:fill-box; transform-origin:center; }.brow { transition:transform .4s ease,stroke .3s ease; transform-box:fill-box; transform-origin:center; }
+.mouth { filter:url(#soft-glow); }.lip,.mouth-opening { transition:d 70ms linear,transform 70ms linear,opacity 70ms linear; }.mouth-opening { fill:#02080b; stroke:var(--cyan); stroke-width:1.2; opacity:.55; }.lip.lower { opacity:.82; }
+.scan-line { fill:url(#scan-gradient); opacity:0; filter:url(#soft-glow); }
+#ada-stage[data-state="listening"] #ada-face { filter:saturate(1.2) brightness(1.2); }#ada-stage[data-state="listening"] .eye { filter:brightness(1.28); }
+#ada-stage[data-state="thinking"] .scan-line { opacity:.7; animation:scan 2.2s ease-in-out infinite; }#ada-stage[data-state="thinking"] .eye .gaze { transform:translate(-3px,0); }
+#ada-stage[data-state="speaking"] .aura { opacity:calc(.2 + var(--speech,0) * .35); }
+#ada-stage[data-state="alert"] { --cyan:#ff8614; --bright:#ffd29a; --dim:#9f3500; }#ada-stage[data-state="alert"] .brow.left { transform:rotate(7deg) translateY(5px); }#ada-stage[data-state="alert"] .brow.right { transform:rotate(-7deg) translateY(5px); }#ada-stage[data-state="alert"] .eyelid.upper { transform:translateY(4px) scaleY(.85); }#ada-stage[data-state="alert"] .aura { opacity:.35; animation:alert-pulse .8s ease-in-out 2; }
+#dev-panel { position:fixed; z-index:20; left:12px; bottom:12px; padding:8px; border:1px solid #38dbea88; border-radius:8px; background:#001015e8; cursor:auto; }#dev-panel:not([hidden]) { display:flex; gap:6px; }#dev-panel button { color:#bffcff; background:#05242c; border:1px solid #17849a; padding:7px; }
+.sr-only { position:absolute!important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+@keyframes breathe { 0%,100%{opacity:.78}50%{opacity:1} }@keyframes scan { 0%{transform:translateY(40px);opacity:0}18%,82%{opacity:.7}100%{transform:translateY(440px);opacity:0} }@keyframes alert-pulse { 50%{opacity:.65} }
+@media (prefers-reduced-motion:reduce) { #ada-face,.aura,.scan-line { animation-duration:12s!important; } }

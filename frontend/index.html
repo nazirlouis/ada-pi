@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <title>ADA</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <main id="ada-stage" data-state="idle" aria-label="ADA voice assistant">
+      <canvas id="particle-field" aria-hidden="true"></canvas>
+      <svg id="ada-face" viewBox="0 0 1000 600" role="img" aria-label="ADA's animated face">
+        <defs>
+          <filter id="soft-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="wide-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="15" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <radialGradient id="iris-fill"><stop offset="0" stop-color="#eaffff"/><stop offset=".2" stop-color="#9dfaff"/><stop offset=".62" stop-color="#13bed5"/><stop offset="1" stop-color="#021b25"/></radialGradient>
+          <linearGradient id="scan-gradient"><stop offset="0" stop-color="transparent"/><stop offset=".5" stop-color="#b9ffff" stop-opacity=".75"/><stop offset="1" stop-color="transparent"/></linearGradient>
+          <clipPath id="face-clip"><path d="M500 52 C350 56 268 154 278 303 C286 430 384 540 500 558 C616 540 714 430 722 303 C732 154 650 56 500 52Z"/></clipPath>
+        </defs>
+        <g class="aura"><ellipse cx="500" cy="300" rx="265" ry="250"/><path d="M260 120 C168 205 198 434 350 540 M740 120 C832 205 802 434 650 540"/></g>
+        <g class="face-lines">
+          <path class="brow left" d="M326 206 C371 175 425 179 462 210 C414 197 369 201 326 221"/><path class="brow right" d="M674 206 C629 175 575 179 538 210 C586 197 631 201 674 221"/>
+          <g class="eye left"><path class="eyelid upper" d="M319 247 C361 205 425 210 466 252 C420 233 365 230 319 247Z"/><path class="eyelid lower" d="M319 247 C363 276 421 278 466 252 C421 262 365 264 319 247Z"/><ellipse class="sclera" cx="394" cy="248" rx="36" ry="18"/><g class="gaze"><circle class="iris" cx="394" cy="248" r="16"/><circle class="pupil" cx="394" cy="248" r="6"/><circle class="eye-glint" cx="388" cy="242" r="3"/></g></g>
+          <g class="eye right"><path class="eyelid upper" d="M681 247 C639 205 575 210 534 252 C580 233 635 230 681 247Z"/><path class="eyelid lower" d="M681 247 C637 276 579 278 534 252 C579 262 635 264 681 247Z"/><ellipse class="sclera" cx="606" cy="248" rx="36" ry="18"/><g class="gaze"><circle class="iris" cx="606" cy="248" r="16"/><circle class="pupil" cx="606" cy="248" r="6"/><circle class="eye-glint" cx="600" cy="242" r="3"/></g></g>
+          <g class="nose"><path d="M482 251 C474 304 465 344 481 371"/><path d="M518 251 C526 304 535 344 519 371"/><path d="M466 377 C480 389 492 386 500 380 C508 386 520 389 534 377"/><path class="nose-light" d="M500 270 L500 360"/></g>
+          <g class="cheeks"><path d="M317 282 C334 337 364 373 425 394"/><path d="M683 282 C666 337 636 373 575 394"/><path d="M295 298 C306 396 364 483 444 522"/><path d="M705 298 C694 396 636 483 556 522"/><path class="fine" d="M337 323 C368 344 398 351 438 348 M663 323 C632 344 602 351 562 348"/><path class="fine" d="M350 414 C387 434 421 438 454 434 M650 414 C613 434 579 438 546 434"/></g>
+          <g class="mouth" transform="translate(500 429)"><path class="lip upper" d="M-65 0 C-34 -8 -18 -18 0 -10 C18 -18 34 -8 65 0 C32 5 14 4 0 3 C-14 4 -32 5 -65 0Z"/><path class="mouth-opening" d="M-60 2 C-27 7 27 7 60 2 C31 16 -31 16 -60 2Z"/><path class="lip lower" d="M-60 3 C-29 20 29 20 60 3 C31 34 -31 34 -60 3Z"/></g>
+          <g class="jaw"><path d="M302 330 C317 448 401 542 500 558"/><path d="M698 330 C683 448 599 542 500 558"/><path class="chin" d="M449 535 C472 557 528 557 551 535"/></g>
+          <g class="circuit-marks"><path d="M270 190 L226 170 L203 132 M294 418 L242 449 L222 503"/><path d="M730 190 L774 170 L797 132 M706 418 L758 449 L778 503"/><path d="M354 117 L327 82 M646 117 L673 82"/><circle cx="226" cy="170" r="3"/><circle cx="242" cy="449" r="3"/><circle cx="774" cy="170" r="3"/><circle cx="758" cy="449" r="3"/></g>
+        </g>
+        <rect class="scan-line" x="245" y="80" width="510" height="8" clip-path="url(#face-clip)"/>
+      </svg>
+      <div id="dev-panel" hidden><button data-state="idle">1 Idle</button><button data-state="listening">2 Listen</button><button data-state="thinking">3 Think</button><button data-state="speaking">4 Speak</button><button data-state="alert">5 Alert</button><button id="quality-toggle">Q Quality</button></div>
+      <button id="connect" class="sr-only">Connect</button><button id="disconnect" class="sr-only" disabled>Disconnect</button>
+      <div id="connection-status" class="sr-only" aria-live="polite">Disconnected</div><div id="microphone-status" class="sr-only">Off</div><div id="log" class="sr-only" role="log" aria-live="polite"></div>
+    </main>
+    <script src="/static/ada-visual.js"></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
