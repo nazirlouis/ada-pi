@@ -2,43 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#000000">
-    <title>ADA</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ADA Pi Voice Chat</title>
     <link rel="stylesheet" href="/static/style.css">
   </head>
   <body>
-    <main id="ada-stage" data-state="idle" data-mouth="rest" aria-label="ADA voice assistant">
-      <div id="ada-rig" role="img" aria-label="ADA's animated spectral face">
-        <img class="face-aura" src="/static/assets/ada/base.png" alt="" aria-hidden="true">
-        <img class="face-base" src="/static/assets/ada/base.png" alt="" aria-hidden="true">
-
-        <div class="eye-window left" aria-hidden="true"><div class="pupil"></div></div>
-        <div class="eye-window right" aria-hidden="true"><div class="pupil"></div></div>
-
-        <img class="mouth-layer" data-viseme="small" src="/static/assets/ada/mouth-small.png" alt="" aria-hidden="true">
-        <img class="mouth-layer" data-viseme="medium" src="/static/assets/ada/mouth-medium.png" alt="" aria-hidden="true">
-        <img class="mouth-layer" data-viseme="wide" src="/static/assets/ada/mouth-wide.png" alt="" aria-hidden="true">
-        <img class="mouth-layer" data-viseme="round" src="/static/assets/ada/mouth-round.png" alt="" aria-hidden="true">
-        <img class="blink-layer" src="/static/assets/ada/blink.png" alt="" aria-hidden="true">
-        <div class="attention-sheen" aria-hidden="true"></div>
+    <main>
+      <h1>ADA Pi voice chat</h1>
+      <div class="controls">
+        <button id="connect">Connect</button>
+        <button id="disconnect" disabled>Disconnect</button>
       </div>
-
-      <div id="dev-panel" hidden>
-        <button data-state="idle">1 Idle</button>
-        <button data-state="listening">2 Listen</button>
-        <button data-state="thinking">3 Think</button>
-        <button data-state="speaking">4 Speak</button>
-        <button data-state="alert">5 Alert</button>
-        <button id="quality-toggle">Q Quality</button>
-      </div>
-      <button id="connect" class="sr-only">Connect</button>
-      <button id="disconnect" class="sr-only" disabled>Disconnect</button>
-      <div id="connection-status" class="sr-only" aria-live="polite">Disconnected</div>
-      <div id="microphone-status" class="sr-only">Off</div>
-      <div id="log" class="sr-only" role="log" aria-live="polite"></div>
+      <dl>
+        <div><dt>Connection</dt><dd id="connection-status">Disconnected</dd></div>
+        <div><dt>Microphone</dt><dd id="microphone-status">Off</dd></div>
+      </dl>
+      <section aria-labelledby="log-title">
+        <h2 id="log-title">Transcript</h2>
+        <div id="log" role="log" aria-live="polite"></div>
+      </section>
     </main>
-    <script src="/static/ada-visual.js"></script>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js" defer></script>
   </body>
 </html>

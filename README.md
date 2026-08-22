@@ -1,6 +1,6 @@
 # ADA Pi
 
-ADA Pi is a continuous full-duplex voice assistant with a layered 2D spectral face optimized for an 800×480 Raspberry Pi display. Chromium captures the microphone and plays assistant audio, while FastAPI proxies 16 kHz microphone audio to a Gemini 3.1 Flash Live session and returns its 24 kHz native audio. Gemini's automatic voice activity detection creates turns and interrupts a response when new speech starts.
+ADA Pi is a simple continuous full-duplex voice chat for Raspberry Pi. Chromium captures the microphone and plays assistant audio, while FastAPI proxies 16 kHz microphone audio to a Gemini 3.1 Flash Live session and returns its 24 kHz native audio. Gemini's automatic voice activity detection creates turns and interrupts a response when new speech starts.
 
 ## Install
 
@@ -40,51 +40,7 @@ source .venv/bin/activate
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 --env-file .env
 ```
 
-On the Pi, open `http://localhost:8000` in Chromium, tap the face once, and allow microphone access. The first tap supplies the browser gesture required to start Web Audio. The backend serves the frontend; do not open `index.html` as a `file://` URL.
-
-### Touchscreen kiosk mode
-
-After granting microphone permission once for `localhost`, launch Chromium without browser chrome:
-
-```bash
-chromium --kiosk --app=http://localhost:8000 \
-  --autoplay-policy=no-user-gesture-required \
-  --noerrdialogs --disable-infobars --disable-session-crashed-bubble
-```
-
-The display contains no visible controls or transcript. Tap anywhere on the face to connect. Press `D` on an attached keyboard to show or hide the development controls; keys `1`–`5` select idle, listening, thinking, speaking, and alert. `Q` toggles render quality.
-
-For permanently reduced blur and animation work, append `?quality=low` to the URL:
-
-```text
-http://localhost:8000/?quality=low
-```
-
-The choice made with `Q` is saved in browser local storage.
-
-### Layered face rig
-
-The visual system uses a fixed spectral portrait plus independently animated layers:
-
-- clipped pupils with continuous gaze and micro-saccades
-- a masked raster blink layer
-- four masked mouth visemes selected from output volume and frequency balance
-- subtle breathing and aura animation
-- idle, listening, thinking, speaking, and alert states
-
-There is no background particle field and the face artwork does not regenerate or move between mouth shapes. All source artwork is 800×480 under `frontend/assets/ada/`.
-
-`frontend/ada-visual.js` exposes:
-
-```javascript
-setAdaState("idle" | "listening" | "thinking" | "speaking" | "alert");
-setGaze(x, y);                         // each axis is clamped to -1…1
-setExpression(name, intensity);       // intensity is clamped to 0…1
-setSpeechLevel(value);                // compatibility API, clamped to 0…1
-setSpeechFeatures(level, brightness); // output-driven viseme control
-```
-
-The playback AudioWorklet feeds an `AnalyserNode` before the speakers. Smoothed RMS controls mouth opening while low/high frequency balance helps choose rounded versus narrow shapes. Interruption clears both queued PCM and the mouth level immediately. The analyzer is output-only and adds neither another microphone stream nor another audio buffer.
+On the Pi, open `http://localhost:8000` in Chromium, click **Connect**, and allow microphone access. The backend serves the frontend; do not open `index.html` as a `file://` URL.
 
 Chromium only permits microphone capture in a secure context. `localhost` is treated as secure. If Chromium runs on another machine and connects to the Pi by LAN IP, use HTTPS with a trusted certificate or an appropriate secure local reverse proxy. Do not bypass this restriction for deployment.
 

@@ -5,7 +5,6 @@ const disconnectButton = document.querySelector("#disconnect");
 const connectionStatus = document.querySelector("#connection-status");
 const microphoneStatus = document.querySelector("#microphone-status");
 const logElement = document.querySelector("#log");
-const adaStage = document.querySelector("#ada-stage");
 
 let socket = null;
 let stream = null;
@@ -13,11 +12,7 @@ let captureContext = null;
 let playbackContext = null;
 let captureNode = null;
 let playbackNode = null;
-let playbackAnalyser = null;
-let playbackMeterFrame = null;
 let assistantEntry = null;
-let settleTimer = null;
-let inputQuietSince = 0;
 
 function logLine(role, text, className = "") {
   const line = document.createElement("p");
@@ -77,47 +72,8 @@ async function createPlayback() {
   await playbackContext.audioWorklet.addModule(url);
   URL.revokeObjectURL(url);
   playbackNode = new AudioWorkletNode(playbackContext, "pcm-player", { outputChannelCount: [1] });
-
-  // Analysis is passive. The existing worklet remains the sole source of
-  // assistant audio, so the rig adds no latency and no second microphone.
-  playbackAnalyser = playbackContext.createAnalyser();
-  playbackAnalyser.fftSize = 256;
-  playbackAnalyser.smoothingTimeConstant = 0.68;
-  playbackNode.connect(playbackAnalyser);
-  playbackAnalyser.connect(playbackContext.destination);
+  playbackNode.connect(playbackContext.destination);
   await playbackContext.resume();
-  startPlaybackMeter();
-}
-
-function startPlaybackMeter() {
-  const samples = new Float32Array(playbackAnalyser.fftSize);
-  const spectrum = new Uint8Array(playbackAnalyser.frequencyBinCount);
-  const measure = () => {
-    if (!playbackAnalyser) return;
-    playbackAnalyser.getFloatTimeDomainData(samples);
-    playbackAnalyser.getByteFrequencyData(spectrum);
-
-    let power = 0;
-    for (const sample of samples) power += sample * sample;
-    const rms = Math.sqrt(power / samples.length);
-    const level = Math.min(1, Math.max(0, (rms - .007) * 8.2));
-
-    // Vowels concentrate more energy in lower bands while consonants are
-    // brighter. This is still approximate, but it produces more believable
-    // viseme choices than volume-only mouth flapping.
-    let lowEnergy = 0;
-    let highEnergy = 0;
-    for (let i = 2; i <= 11; i++) lowEnergy += spectrum[i];
-    for (let i = 12; i <= 48; i++) highEnergy += spectrum[i];
-    lowEnergy /= 10;
-    highEnergy /= 37;
-    const brightness = highEnergy / Math.max(1, lowEnergy + highEnergy);
-
-    if (window.setSpeechFeatures) setSpeechFeatures(level, brightness);
-    else setSpeechLevel(level);
-    playbackMeterFrame = requestAnimationFrame(measure);
-  };
-  playbackMeterFrame = requestAnimationFrame(measure);
 }
 
 async function startMicrophone() {
@@ -137,18 +93,9 @@ async function startMicrophone() {
   silent.gain.value = 0;
   captureNode.onaudioprocess = (event) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    const input = event.inputBuffer.getChannelData(0);
-    let inputPower = 0;
-    for (const sample of input) inputPower += sample * sample;
-    const inputRms = Math.sqrt(inputPower / input.length);
-    if (adaVisual.state !== "speaking" && inputRms > .025) {
-      inputQuietSince = 0;
-      setAdaState("listening");
-    } else if (adaVisual.state === "listening") {
-      if (!inputQuietSince) inputQuietSince = performance.now();
-      else if (performance.now() - inputQuietSince > 350) setAdaState("thinking");
-    }
-    const pcm = downsampleToPCM16(input, captureContext.sampleRate, INPUT_RATE);
+    const pcm = downsampleToPCM16(
+      event.inputBuffer.getChannelData(0), captureContext.sampleRate, INPUT_RATE
+    );
     socket.send(pcm);
   };
   source.connect(captureNode);
@@ -162,26 +109,20 @@ function handleControl(event) {
     case "ready":
       setConnected(true);
       connectionStatus.textContent = "Connected — listening";
-      setAdaState("idle");
       break;
     case "speech_started":
       microphoneStatus.textContent = "Speech detected";
-      setAdaState("listening");
       break;
     case "speech_stopped":
       microphoneStatus.textContent = "On — listening";
       break;
     case "clear_audio":
       playbackNode?.port.postMessage({ type: "clear" });
-      clearTimeout(settleTimer);
-      setSpeechLevel(0);
-      setAdaState("listening");
       assistantEntry = null;
       console.info("assistant interrupted; playback queue cleared");
       break;
     case "user_transcript":
       logLine("You", event.text);
-      setAdaState("thinking");
       break;
     case "assistant_transcript_delta":
       if (!assistantEntry) assistantEntry = logLine("Assistant", "");
@@ -190,22 +131,13 @@ function handleControl(event) {
       break;
     case "response_started":
       assistantEntry = null;
-      clearTimeout(settleTimer);
-      setAdaState("speaking");
       break;
     case "response_completed":
-      settleTimer = setTimeout(() => setAdaState("idle"), 450);
-      assistantEntry = null;
-      break;
     case "response_interrupted":
-      clearTimeout(settleTimer);
-      setSpeechLevel(0);
-      setAdaState("listening");
       assistantEntry = null;
       break;
     case "error":
       logLine("Error", event.message, "system");
-      setAdaState("alert");
       break;
   }
 }
@@ -222,10 +154,7 @@ async function connect() {
     socket.onopen = () => { connectionStatus.textContent = "Connecting to AI…"; };
     socket.onmessage = (message) => {
       if (typeof message.data === "string") handleControl(JSON.parse(message.data));
-      else {
-        setAdaState("speaking");
-        playbackNode?.port.postMessage(message.data, [message.data]);
-      }
+      else playbackNode?.port.postMessage(message.data, [message.data]);
     };
     socket.onerror = () => logLine("System", "WebSocket error", "system");
     socket.onclose = () => disconnect(false);
@@ -240,9 +169,6 @@ async function disconnect(closeSocket = true) {
   if (closeSocket && socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "user disconnect");
   socket = null;
   if (captureNode) captureNode.disconnect();
-  if (playbackMeterFrame) cancelAnimationFrame(playbackMeterFrame);
-  playbackMeterFrame = null;
-  playbackAnalyser = null;
   if (stream) stream.getTracks().forEach(track => track.stop());
   if (captureContext) await captureContext.close().catch(() => {});
   if (playbackContext) await playbackContext.close().catch(() => {});
@@ -250,16 +176,8 @@ async function disconnect(closeSocket = true) {
   assistantEntry = null;
   microphoneStatus.textContent = "Off";
   setConnected(false);
-  setSpeechLevel(0);
-  setAdaState("idle");
   console.info("session closed");
 }
 
 connectButton.addEventListener("click", connect);
 disconnectButton.addEventListener("click", () => disconnect(true));
-
-// Kiosk mode has no visible controls. The first tap/click is the browser
-// gesture required for microphone permission and AudioContext playback.
-adaStage.addEventListener("pointerdown", () => {
-  if (!socket && !connectButton.disabled) connect();
-});
