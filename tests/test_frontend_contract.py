@@ -70,6 +70,7 @@ class FrontendContractTests(unittest.TestCase):
     def test_audio_pipeline_keeps_one_microphone_and_passive_output_meter(self) -> None:
         app = (ROOT / "frontend/app.js").read_text()
         self.assertEqual(app.count("getUserMedia("), 1)
+        self.assertEqual(app.count("echoCancellation: true"), 1)
         self.assertIn("playbackContext.createAnalyser()", app)
         self.assertIn("playbackNode.connect(playbackAnalyser)", app)
         self.assertIn("playbackAnalyser.connect(playbackContext.destination)", app)
@@ -82,6 +83,23 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn('fetch("/shutdown"', app)
         self.assertIn('case "expression"', app)
         self.assertNotIn("setAdaState", app)
+
+    def test_video_uses_native_pi_camera_without_touching_browser_audio(self) -> None:
+        app = (ROOT / "frontend/app.js").read_text()
+        provider = (ROOT / "backend/realtime_provider.py").read_text()
+        backend = (ROOT / "backend/main.py").read_text()
+        start_script = (ROOT / "start.sh").read_text()
+        self.assertNotIn("cameraStream", app)
+        self.assertIn('shutil.which("rpicam-vid")', backend)
+        self.assertIn('"--framerate", "1"', backend)
+        self.assertIn('"--codec", "mjpeg"', backend)
+        self.assertIn('local_speech_started', app)
+        self.assertIn('local_speech_stopped', app)
+        self.assertIn('control.get("type") == "local_speech_started"', backend)
+        self.assertIn('clear_speech_activity_after_grace', backend)
+        self.assertIn('VIDEO_MODE="${ADA_VIDEO_MODE:-activity}"', start_script)
+        self.assertIn('video=types.Blob(data=jpeg, mime_type="image/jpeg")', provider)
+        self.assertIn("MEDIA_RESOLUTION_HIGH", provider)
 
     def test_no_frontend_image_assets_remain(self) -> None:
         assets = ROOT / "frontend/assets"

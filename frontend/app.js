@@ -17,6 +17,10 @@ let playbackNode = null;
 let playbackAnalyser = null;
 let playbackMeterFrame = null;
 let assistantEntry = null;
+let localSpeechActive = false;
+let speechAboveFrames = 0;
+let speechBelowFrames = 0;
+let microphoneNoiseFloor = .004;
 
 function logLine(role, text, className = "") {
   const line = document.createElement("p");
@@ -147,8 +151,30 @@ async function startMicrophone() {
   silent.gain.value = 0;
   captureNode.onaudioprocess = (event) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const samples = event.inputBuffer.getChannelData(0);
+    let power = 0;
+    for (const sample of samples) power += sample * sample;
+    const rms = Math.sqrt(power / samples.length);
+    if (!localSpeechActive) microphoneNoiseFloor = microphoneNoiseFloor * .98 + rms * .02;
+    const startThreshold = Math.max(.012, microphoneNoiseFloor * 2.8);
+    const stopThreshold = Math.max(.008, microphoneNoiseFloor * 1.7);
+    if (!localSpeechActive) {
+      speechAboveFrames = rms > startThreshold ? speechAboveFrames + 1 : 0;
+      if (speechAboveFrames >= 3) {
+        localSpeechActive = true;
+        speechBelowFrames = 0;
+        socket.send(JSON.stringify({ type: "local_speech_started" }));
+      }
+    } else {
+      speechBelowFrames = rms < stopThreshold ? speechBelowFrames + 1 : 0;
+      if (speechBelowFrames >= 12) {
+        localSpeechActive = false;
+        speechAboveFrames = 0;
+        socket.send(JSON.stringify({ type: "local_speech_stopped" }));
+      }
+    }
     const pcm = downsampleToPCM16(
-      event.inputBuffer.getChannelData(0), captureContext.sampleRate, INPUT_RATE
+      samples, captureContext.sampleRate, INPUT_RATE
     );
     socket.send(pcm);
   };
@@ -244,6 +270,9 @@ async function disconnect(closeSocket = true) {
   if (captureContext) await captureContext.close().catch(() => {});
   if (playbackContext) await playbackContext.close().catch(() => {});
   stream = captureContext = playbackContext = captureNode = playbackNode = null;
+  localSpeechActive = false;
+  speechAboveFrames = speechBelowFrames = 0;
+  microphoneNoiseFloor = .004;
   assistantEntry = null;
   microphoneStatus.textContent = "Off";
   setConnected(false);

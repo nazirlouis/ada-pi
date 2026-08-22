@@ -44,6 +44,9 @@ class RealtimeProvider(abc.ABC):
     async def send_audio(self, pcm16: bytes) -> None: ...
 
     @abc.abstractmethod
+    async def send_video(self, jpeg: bytes) -> None: ...
+
+    @abc.abstractmethod
     def events(self) -> AsyncIterator[ProviderEvent]: ...
 
     @abc.abstractmethod
@@ -57,6 +60,7 @@ class GeminiLiveProvider(RealtimeProvider):
         self.api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         self.model = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
         self.voice = os.environ.get("GEMINI_LIVE_VOICE", "Kore")
+        self.video_resolution = os.environ.get("GEMINI_VIDEO_RESOLUTION", "high").lower()
         base_instructions = os.environ.get(
             "GEMINI_LIVE_INSTRUCTIONS",
             "You are a concise, friendly voice assistant. Reply naturally and briefly.",
@@ -70,11 +74,16 @@ class GeminiLiveProvider(RealtimeProvider):
             "materially. Prefer neutral for ordinary replies; "
             "use alert only for genuine urgency or warnings. Never describe or announce "
             "the tool call to the user."
+            " Camera frames provide your current visual context. When the user asks "
+            "what you see, ground the answer only in the newest clear frame. Do not "
+            "guess an object's identity from an ambiguous or blurred view; briefly "
+            "ask the user to hold it steady or move it closer instead."
         )
         self._client: Any = None
         self._session_context: Any = None
         self._session: Any = None
         self._closed = False
+        self._send_lock = asyncio.Lock()
 
     async def connect(self) -> None:
         if not self.api_key:
@@ -83,6 +92,11 @@ class GeminiLiveProvider(RealtimeProvider):
         self._client = genai.Client(api_key=self.api_key)
         config = {
             "response_modalities": ["AUDIO"],
+            "media_resolution": (
+                types.MediaResolution.MEDIA_RESOLUTION_HIGH
+                if self.video_resolution == "high"
+                else types.MediaResolution.MEDIA_RESOLUTION_LOW
+            ),
             "system_instruction": self.instructions,
             "input_audio_transcription": {},
             "output_audio_transcription": {},
@@ -144,14 +158,28 @@ class GeminiLiveProvider(RealtimeProvider):
             config=config,
         )
         self._session = await self._session_context.__aenter__()
-        logger.info("Gemini Live session connected (model=%s, voice=%s)", self.model, self.voice)
+        logger.info(
+            "Gemini Live session connected (model=%s, voice=%s, video=%s)",
+            self.model,
+            self.voice,
+            self.video_resolution,
+        )
 
     async def send_audio(self, pcm16: bytes) -> None:
         if self._session is None:
             raise RuntimeError("provider is not connected")
-        await self._session.send_realtime_input(
-            audio=types.Blob(data=pcm16, mime_type="audio/pcm;rate=16000")
-        )
+        async with self._send_lock:
+            await self._session.send_realtime_input(
+                audio=types.Blob(data=pcm16, mime_type="audio/pcm;rate=16000")
+            )
+
+    async def send_video(self, jpeg: bytes) -> None:
+        if self._session is None:
+            raise RuntimeError("provider is not connected")
+        async with self._send_lock:
+            await self._session.send_realtime_input(
+                video=types.Blob(data=jpeg, mime_type="image/jpeg")
+            )
 
     async def events(self) -> AsyncIterator[ProviderEvent]:
         if self._session is None:

@@ -74,6 +74,23 @@ class ProviderEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.id, "expression-call-1")
         self.assertEqual(response.scheduling, types.FunctionResponseScheduling.SILENT)
 
+    async def test_video_frame_uses_live_video_input(self) -> None:
+        class VideoSession:
+            def __init__(self) -> None:
+                self.video = None
+
+            async def send_realtime_input(self, *, video):
+                self.video = video
+
+        provider = GeminiLiveProvider()
+        session = VideoSession()
+        provider._session = session
+
+        await provider.send_video(b"jpeg-frame")
+
+        self.assertEqual(session.video.data, b"jpeg-frame")
+        self.assertEqual(session.video.mime_type, "image/jpeg")
+
 
 if __name__ == "__main__":
     unittest.main()

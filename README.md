@@ -28,6 +28,7 @@ Optional variables:
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
 GEMINI_LIVE_VOICE=Kore
 GEMINI_LIVE_INSTRUCTIONS="You are a concise, friendly voice assistant."
+GEMINI_VIDEO_RESOLUTION=high
 ```
 
 Create Gemini API keys in [Google AI Studio](https://aistudio.google.com/app/apikey). `backend/realtime_provider.py` contains the Gemini Live integration.
@@ -61,6 +62,21 @@ ends the Gemini session while leaving ADA open so you can reconnect. **Exit** cl
 both Chromium and the backend. Closing the Chromium window by another method also
 stops the backend. The backend serves the frontend; do not open `index.html` as a
 `file://` URL.
+
+The backend captures the Raspberry Pi camera directly with `rpicam-vid`; Chromium
+does not request camera access. ADA sends one 640×480 MJPEG frame per second at
+most. The default `ADA_VIDEO_MODE=activity` sends the latest frame when local
+speech begins, continues at up to 1 FPS during speech, and includes a short
+post-speech grace period. This keeps visual context aligned with each question
+while reducing vision token usage. For continuous scene awareness, launch with:
+
+```bash
+ADA_VIDEO_MODE=continuous ./start.sh
+```
+
+Continuous mode consumes more Gemini input tokens. Native camera
+capture is independent of Chromium, so the existing microphone stream and
+echo-cancellation settings are unchanged.
 
 Chromium only permits microphone capture in a secure context. `localhost` is treated as secure. If Chromium runs on another machine and connects to the Pi by LAN IP, use HTTPS with a trusted certificate or an appropriate secure local reverse proxy. Do not bypass this restriction for deployment.
 
@@ -98,6 +114,9 @@ The backend logs browser connection, summarized incoming audio, Gemini connectio
 ```text
 Chromium getUserMedia (AEC/NS/AGC) -> PCM16/16 kHz -> FastAPI WebSocket
 -> Gemini 3.1 Flash Live API -> PCM16/24 kHz chunks -> browser AudioWorklet -> speakers
+
+rpicam-vid -> MJPEG 640x480 at 1 FPS -> Gemini Live video input
+(high media resolution by default)
 ```
 
 No recordings or WAV files are created. The microphone remains active while assistant audio plays.

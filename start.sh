@@ -6,6 +6,7 @@ VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
 ENV_FILE="$PROJECT_DIR/.env"
 HOST="${ADA_HOST:-0.0.0.0}"
 PORT="${ADA_PORT:-8000}"
+VIDEO_MODE="${ADA_VIDEO_MODE:-activity}"
 KIOSK_URL="http://localhost:$PORT"
 CHROMIUM_PROFILE="${ADA_CHROMIUM_PROFILE:-$PROJECT_DIR/.chromium-kiosk}"
 
@@ -32,7 +33,7 @@ else
 fi
 
 cd "$PROJECT_DIR"
-"$VENV_PYTHON" -m uvicorn backend.main:app \
+ADA_VIDEO_MODE="$VIDEO_MODE" "$VENV_PYTHON" -m uvicorn backend.main:app \
   --host "$HOST" \
   --port "$PORT" \
   --env-file "$ENV_FILE" &
