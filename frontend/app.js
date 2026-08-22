@@ -77,11 +77,12 @@ async function createPlayback() {
   await playbackContext.audioWorklet.addModule(url);
   URL.revokeObjectURL(url);
   playbackNode = new AudioWorkletNode(playbackContext, "pcm-player", { outputChannelCount: [1] });
-  // Analysis is passive: the existing PCM worklet remains the sole playback
-  // source and this node neither buffers nor modifies its audio.
+
+  // Analysis is passive. The existing worklet remains the sole source of
+  // assistant audio, so the rig adds no latency and no second microphone.
   playbackAnalyser = playbackContext.createAnalyser();
   playbackAnalyser.fftSize = 256;
-  playbackAnalyser.smoothingTimeConstant = 0.72;
+  playbackAnalyser.smoothingTimeConstant = 0.68;
   playbackNode.connect(playbackAnalyser);
   playbackAnalyser.connect(playbackContext.destination);
   await playbackContext.resume();
@@ -90,15 +91,30 @@ async function createPlayback() {
 
 function startPlaybackMeter() {
   const samples = new Float32Array(playbackAnalyser.fftSize);
+  const spectrum = new Uint8Array(playbackAnalyser.frequencyBinCount);
   const measure = () => {
     if (!playbackAnalyser) return;
     playbackAnalyser.getFloatTimeDomainData(samples);
+    playbackAnalyser.getByteFrequencyData(spectrum);
+
     let power = 0;
     for (const sample of samples) power += sample * sample;
     const rms = Math.sqrt(power / samples.length);
-    // Speech PCM is typically well below full scale; expand and clamp it for
-    // expressive mouth shapes while AdaVisualController supplies smoothing.
-    setSpeechLevel(Math.min(1, Math.max(0, (rms - .008) * 7.5)));
+    const level = Math.min(1, Math.max(0, (rms - .007) * 8.2));
+
+    // Vowels concentrate more energy in lower bands while consonants are
+    // brighter. This is still approximate, but it produces more believable
+    // viseme choices than volume-only mouth flapping.
+    let lowEnergy = 0;
+    let highEnergy = 0;
+    for (let i = 2; i <= 11; i++) lowEnergy += spectrum[i];
+    for (let i = 12; i <= 48; i++) highEnergy += spectrum[i];
+    lowEnergy /= 10;
+    highEnergy /= 37;
+    const brightness = highEnergy / Math.max(1, lowEnergy + highEnergy);
+
+    if (window.setSpeechFeatures) setSpeechFeatures(level, brightness);
+    else setSpeechLevel(level);
     playbackMeterFrame = requestAnimationFrame(measure);
   };
   playbackMeterFrame = requestAnimationFrame(measure);
@@ -115,7 +131,7 @@ async function startMicrophone() {
 
   captureContext = new AudioContext({ latencyHint: "interactive" });
   const source = captureContext.createMediaStreamSource(stream);
-  // ScriptProcessor is intentionally used for broad Raspberry Pi Chromium support.
+  // ScriptProcessor is intentionally retained for broad Pi Chromium support.
   captureNode = captureContext.createScriptProcessor(2048, 1, 1);
   const silent = captureContext.createGain();
   silent.gain.value = 0;
@@ -132,11 +148,7 @@ async function startMicrophone() {
       if (!inputQuietSince) inputQuietSince = performance.now();
       else if (performance.now() - inputQuietSince > 350) setAdaState("thinking");
     }
-    const pcm = downsampleToPCM16(
-      input,
-      captureContext.sampleRate,
-      INPUT_RATE
-    );
+    const pcm = downsampleToPCM16(input, captureContext.sampleRate, INPUT_RATE);
     socket.send(pcm);
   };
   source.connect(captureNode);
@@ -246,8 +258,8 @@ async function disconnect(closeSocket = true) {
 connectButton.addEventListener("click", connect);
 disconnectButton.addEventListener("click", () => disconnect(true));
 
-// Kiosk mode has no visible controls. The first tap/click is the required
-// browser user gesture for microphone permission and AudioContext playback.
+// Kiosk mode has no visible controls. The first tap/click is the browser
+// gesture required for microphone permission and AudioContext playback.
 adaStage.addEventListener("pointerdown", () => {
   if (!socket && !connectButton.disabled) connect();
 });
