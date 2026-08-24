@@ -100,9 +100,6 @@
       brow.style.opacity = pathData ? "1" : "0";
     });
     if (speechLevel <= .025) applyMouthShape("rest", true);
-    document.querySelectorAll("#expression-controls button").forEach((button) => {
-      button.classList.toggle("active", button.dataset.expression === name);
-    });
     return true;
   }
 
@@ -234,17 +231,6 @@
   });
 
   window.idleFace = { setGaze, setSpeechLevel, setConnecting, setExpression, expressions };
-  const expressionControls = document.querySelector("#expression-controls");
-  if (expressionControls) {
-    expressions.forEach((name) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.dataset.expression = name;
-      button.textContent = name;
-      button.addEventListener("click", () => setExpression(name));
-      expressionControls.append(button);
-    });
-  }
   setExpression("neutral");
   start();
 })();

@@ -1,42 +1,133 @@
 # ADA Pi
 
-ADA Pi is a full-duplex, multimodal AI assistant for Raspberry Pi 5. It combines
-Gemini 3.1 Flash Live voice conversation, native Pi-camera vision, and a
-lightweight animated SVG face designed for a 4.3-inch landscape touchscreen.
+ADA is a voice-first desk assistant for Raspberry Pi 5. She holds natural,
+full-duplex conversations, sees through a fixed Pi camera, displays an animated
+face, and helps you notice recurring desk habits without recording your day.
 
-## Features
+## What Ada can do
 
-- Continuous microphone input while Ada speaks, with Chromium AEC/NS/AGC.
-- Immediate voice interruption and playback cancellation (barge-in).
-- Native 24 kHz Gemini audio playback with a small anti-jitter buffer.
-- Raspberry Pi camera input through `rpicam-vid` at up to one JPEG frame/second.
-- Activity-gated vision by default, with an optional continuous vision mode.
-- Eleven model-controlled expressions with gaze, blinking, eyebrow movement,
-  neon glow, and audio-amplitude-driven mouth shapes.
-- Full-screen Chromium kiosk startup and coordinated browser/backend shutdown.
-- Sliding-window context compression for extended conversations.
-- Native Pironman 5 hardware drawer with live telemetry and validated RGB/OLED controls.
-- Expression-synchronized case lighting, including red for Mad and orange for Alert.
-- Always-on OLED guard that disables display sleep while Ada is running.
+- Talk and listen at the same time, with immediate voice interruption.
+- Use the camera to answer questions about objects and the current scene.
+- Show eleven expressive faces and synchronize compatible Pironman case lighting.
+- Track posture, long desk sessions, distracting phone use, and desk clutter.
+- Notice office lights left on using Home Assistant and local presence detection.
+- Show live MoveNet pose and EfficientDet object-detection previews.
+- Display Pironman telemetry and safe hardware controls.
+- Maintain long conversations with Gemini Live resumption and context compression.
+
+Ada shares one camera stream across conversation, pose, object detection, and
+habit monitoring. Local inference always processes the newest frame, preventing
+stale video from accumulating behind audio or UI work.
+
+## Using Ada
+
+```bash
+cd /home/naz/ada-pi
+./start.sh
+```
+
+Speak naturally once Ada indicates that she is connected. You can interrupt her
+while she is speaking; queued playback is discarded immediately.
+
+The kiosk controls provide:
+
+- **Settings** — edit Ada's prompt and inspect the Gemini connection.
+- **Habit settings** — calibrate and configure all habit monitors.
+- **Habit tracker** — view possible, emerging, and established patterns.
+- **Home Assistant** — view and locally control allow-listed devices.
+- **Pose** — inspect shared MoveNet landmarks and confidence.
+- **Detect** — inspect shared EfficientDet boxes and confidence.
+- **Hardware** — view Pironman telemetry and safe controls.
+- **Disconnect** — disconnect the microphone while background alerts remain active.
+- **Exit** — stop the browser, backend, camera, and Gemini session.
+
+## Habit coaching
+
+Ada records one occurrence per prolonged episode. Repeated polling cannot inflate
+progress while a condition remains active. A habit is:
+
+- **Possible** after its first confirmed occurrence.
+- **Emerging** after three occurrences.
+- **Established** after ten occurrences across at least three days in seven days.
+
+Each confirmed visual habit creates a durable on-screen alert and one concise
+spoken response with a practical correction. Alerts remain until acknowledged.
+Settings, monitor state, and numerical calibrations survive restarts. Clearing
+history removes events and progress while preserving settings and calibrations.
+
+### Posture
+
+Open **Habit settings**, choose **Calibrate good posture**, and sit tall and still
+for 30 seconds. Keep both shoulders and at least one ear visible. Then choose
+**Calibrate slouch posture** and hold the slouch Ada should recognize.
+
+MoveNet evaluates posture locally. A sustained high score sends one current frame
+to Gemini for structured confirmation. Brief movement, unclear landmarks, and
+rejected confirmations do not create events. Images are never saved.
+
+### Sitting too long
+
+Ada treats continuous desk presence as sitting, including standing at the desk.
+By default she alerts after 60 minutes, tolerates visibility gaps up to 15
+seconds, and resets after five continuous minutes away. Timing and enablement are
+available under **Habit settings → Sitting Too Long**.
+
+### Phone distraction
+
+A phone must remain near a visible wrist, hand region, or face for most of a
+rolling two-minute window. A phone resting on the desk and brief checks are
+ignored. Two continuous minutes without active-use evidence resets the episode.
+
+### Desk clutter
+
+Arrange a clean desk, choose **Calibrate clean desk**, leave the camera frame,
+and keep the scene still. Ada stores normalized, downscaled numerical descriptors,
+not calibration photos.
+
+When nobody has been visible for 30 seconds, Ada compares the scene with the
+baseline. A change must persist before Gemini receives one current frame to
+confirm clutter with at least 65% confidence. Speech waits until you return; the
+visual alert remains available immediately. Cleanup or recalibration resets it.
+
+### Office lights left on
+
+With Home Assistant configured, Ada checks that a tracked light is on while the
+configured person is away, waits through a grace period, and checks again before
+recording. Local presence prevents false alerts while you remain in the office.
+Unknown or stale presence fails safely. The episode resets when all lights turn
+off or at the configured next-day reset time.
+
+## Privacy
+
+- Camera images and audio are never recorded to disk.
+- Posture and desk calibrations contain numerical values only.
+- Gemini receives conversational frames and individual confirmation frames as needed.
+- Gemini and Home Assistant credentials stay in the backend.
+- Habit data is stored locally in `data/habits.db`.
+- Raw audio is not included in logs.
+
+The default vision mode forwards frames to Gemini only around speech. Continuous
+scene awareness is optional:
+
+```bash
+ADA_VIDEO_MODE=continuous ./start.sh
+```
 
 ## Requirements
 
-- Raspberry Pi 5 running 64-bit Raspberry Pi OS.
+- Raspberry Pi 5 with 64-bit Raspberry Pi OS.
 - Python 3.11 or newer.
-- Chromium.
-- A working microphone and speaker.
-- A Raspberry Pi camera recognized by `rpicam-vid` for vision features.
-- A Gemini API key with access to `gemini-3.1-flash-live-preview`.
+- Chromium or Chromium Browser.
+- A microphone, speaker, and Pi camera.
+- A Gemini API key with access to the configured Live model.
 
-Verify the camera before setup:
+Check the camera first:
 
 ```bash
 rpicam-hello --list-cameras
 ```
 
-At least one camera must appear under `Available cameras`.
-
-## Install
+## Installation
 
 ```bash
 cd /home/naz/ada-pi
@@ -44,218 +135,89 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r backend/requirements.txt
+cp .env.example .env
 ```
 
-The launch script also expects `rpicam-vid` and either `chromium` or
-`chromium-browser` to be available on `PATH`.
-
-## Configure
-
-Create `/home/naz/ada-pi/.env`:
+Add your [Google AI Studio](https://aistudio.google.com/app/apikey) key to `.env`:
 
 ```bash
 GEMINI_API_KEY=your-google-ai-studio-key
 ```
 
-Optional `.env` settings:
+Useful optional settings:
 
 ```bash
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
 GEMINI_LIVE_VOICE=Kore
-GEMINI_LIVE_INSTRUCTIONS="You are a concise, friendly voice assistant."
+GEMINI_POSTURE_MODEL=gemini-3.5-flash-lite
 GEMINI_VIDEO_RESOLUTION=high
 PIRONMAN_URL=http://127.0.0.1:34001
+ADA_LOG_LEVEL=INFO
+ADA_TIMEZONE=America/New_York
 ```
 
-The API key stays in the backend and is never sent to Chromium. Create a key in
-[Google AI Studio](https://aistudio.google.com/app/apikey).
+The bundled MoveNet and EfficientDet Lite INT8 models use LiteRT's ARM64 XNNPACK
+CPU delegate; no Hailo hardware is required.
 
-## Run
+Launch options can be supplied to the script:
 
 ```bash
-cd /home/naz/ada-pi
-./start.sh
+ADA_HOST=127.0.0.1 ADA_PORT=8080 ADA_VIDEO_MODE=activity ./start.sh
 ```
 
-The script:
+Do not open `frontend/index.html` as a `file://` URL. Microphone capture requires
+the secure `localhost` context provided by the backend.
 
-1. Validates `.venv`, `.env`, and Chromium.
-2. Starts FastAPI/Uvicorn on port 8000.
-3. Waits for the backend to become ready.
-4. Opens ADA in Chromium kiosk mode.
-5. Stops the backend when Chromium closes, and vice versa.
+## Home Assistant setup
 
-Tap Ada's face to connect and grant microphone permission on the first launch.
-
-- **Disconnect** ends the Gemini session while leaving the kiosk open. Tap the
-  face to reconnect.
-- **Exit** closes the Gemini session, backend, and kiosk browser.
-- The temporary buttons in the top-left manually test each facial expression.
-  Gemini can still change the active expression through its function tool.
-
-The host and port are shell launch settings:
+Create a long-lived token and configure `.env`:
 
 ```bash
-ADA_HOST=127.0.0.1 ADA_PORT=8080 ./start.sh
+ADA_START_HOME_ASSISTANT=true
+ADA_HOME_ASSISTANT_COMPOSE_FILE=/home/naz/homeassistant/compose.yaml
+HOME_ASSISTANT_URL=http://127.0.0.1:8123
+HOME_ASSISTANT_TOKEN=replace_with_your_token
+HOME_ASSISTANT_PERSON=person.naz
+HOME_ASSISTANT_OFFICE_LIGHTS=light.left_office_light,light.right_office_light
+HOME_ASSISTANT_POLL_SECONDS=15
+OFFICE_EMPTY_GRACE_SECONDS=300
 ```
 
-Do not open `frontend/index.html` as a `file://` URL. Chromium microphone capture
-requires a secure context; `localhost` qualifies.
+When enabled, `start.sh` starts the configured Compose project and waits for Home
+Assistant before launching Ada. It leaves Home Assistant running on exit. Set
+`ADA_START_HOME_ASSISTANT=false` when it is managed separately.
 
-## Pironman 5 integration
+## Pironman integration
 
-Ada uses the locally running SunFounder dashboard API instead of accessing the
-GPIO hardware in parallel with Pironman's service. The default API address is
-`http://127.0.0.1:34001`; override it with `PIRONMAN_URL` if necessary. Keep the
-Pironman background service running even if its standalone browser autostart is
-disabled.
+Ada uses the running SunFounder dashboard API instead of accessing GPIO in
+parallel. Keep `pironman5.service` active. The default API is
+`http://127.0.0.1:34001`; override it with `PIRONMAN_URL`.
 
-Tap **Hardware** in Ada's lower-right controls to open the native hardware
-drawer. While it is open, Ada refreshes telemetry every three seconds and
-automatically organizes every value reported by the installed Pironman variant:
+The Hardware drawer exposes available telemetry and reversible controls. Ada
+does not proxy shutdown, reboot, service restart, hardware-pin changes, battery
+thresholds, credentials, or unrelated configuration. An OLED guard keeps the
+display enabled with sleep disabled while Ada runs.
 
-- CPU, GPU, memory, load, uptime, and temperatures.
-- Disks, filesystems, mounted storage, and usage.
-- Fan state, speed, and thermal data.
-- Battery percentage, voltage, current, charging state, and power source when a
-  supported UPS or PiPower device reports them.
-- Input/output voltage, current, and power.
-- Network, IP, and MAC information.
-- Any additional scalar telemetry introduced by future dashboard versions.
-
-Available controls are detected from the installed configuration. Depending on
-the Pironman variant, the drawer can expose:
-
-- RGB enable, color, brightness, effect, and effect speed.
-- OLED enable, rotation, and sleep timeout.
-- Celsius/Fahrenheit selection.
-- Fan profile and fan-LED behavior.
-- A link to the complete SunFounder dashboard for advanced administration.
-
-Ada's backend validates each control and calls the dashboard's versioned
-`/api/v1.0/` endpoints. It never exposes or proxies shutdown, reboot, service
-restart, power-failure simulation, hardware-pin changes, or battery shutdown
-thresholds. SMTP credentials and unrelated configuration also remain inside the
-Pironman service and are not sent to Chromium.
-
-### Always-on OLED
-
-While Ada is running, a background guard checks the OLED once per minute and
-enforces `oled_enable=true` with `oled_sleep_timeout=0`. It writes only when a
-setting needs correction and does not change any Pi power behavior.
-
-### Disable the standalone Pironman browser
-
-Ada does not require Pironman's separate dashboard window. Disable only its
-desktop autostart entry while retaining `pironman5.service`. A disabled entry at
-`~/.config/autostart/pironman5-dashboard.desktop` should contain:
-
-```ini
-Hidden=true
-X-GNOME-Autostart-enabled=false
-```
-
-## Vision modes
-
-Activity-gated vision is the default:
-
-```bash
-./start.sh
-```
-
-Chromium detects local speech from its already echo-cancelled microphone samples.
-That signal only controls video forwarding; it does not gate or modify audio sent
-to Gemini. When speech begins, the backend immediately sends its most recent
-camera frame, continues at up to one frame/second, and keeps a 1.5-second
-post-speech grace window so the final view remains associated with the question.
-
-For continuous scene awareness:
-
-```bash
-ADA_VIDEO_MODE=continuous ./start.sh
-```
-
-Continuous mode sends one frame/second throughout the session and consumes more
-Gemini vision tokens. To lower visual processing cost further:
-
-```bash
-GEMINI_VIDEO_RESOLUTION=low ADA_VIDEO_MODE=activity ./start.sh
-```
-
-`ADA_VIDEO_MODE`, `ADA_HOST`, and `ADA_PORT` are launch-time shell variables.
-Gemini settings are loaded from `.env` by Uvicorn.
-
-## Facial expressions
-
-Ada calls `set_facial_expression` before each spoken reply. Supported values are:
+## How it works
 
 ```text
-neutral, sassy, amused, skeptical, annoyed, mad, concerned,
-surprised, mischievous, serious, alert
+Microphone -> Chromium AEC/NS -> PCM16 WebSocket -> Gemini Live
+Gemini audio -> WebSocket -> AudioWorklet -> speakers + animated mouth
+
+Pi camera -> one latest-frame MJPEG hub
+          -> activity-gated Gemini vision
+          -> MoveNet pose and presence
+          -> EfficientDet phone/object detection
+          -> local desk descriptors
+
+SQLite -> events + lifecycle + settings + calibrations + notification outbox
 ```
 
-The backend validates the function call and forwards a small expression event to
-the browser. Expression geometry remains independent of gaze, blinking, glow,
-and speech amplitude, so every face can continue talking naturally. The manual
-test buttons use the same expression path.
+The camera runs at 640×480 and 5 FPS. Local inference runs in worker threads.
+The Detect preview consumes existing monitor results instead of starting a
+competing loop. Gemini Live reconnects automatically when sessions expire.
 
-Each expression changes Ada's eyes, mouth, eyebrows, aura, shimmer, and Pironman
-case LEDs to the same palette:
-
-| Expression | Color | Hex |
-| --- | --- | --- |
-| Neutral | Cyan | `#17dfff` |
-| Sassy | Pink | `#ff3dbe` |
-| Amused | Green | `#35ff9a` |
-| Skeptical | Violet blue | `#7d8cff` |
-| Annoyed | Orange red | `#ff6b35` |
-| Mad | Red | `#ff2400` |
-| Concerned | Blue | `#4a8fff` |
-| Surprised | Yellow | `#ffd43b` |
-| Mischievous | Purple | `#b45cff` |
-| Serious | Pale cyan | `#d9f7ff` |
-| Alert | Safety orange | `#ff8618` |
-
-Case synchronization sends one latency-sensitive color request per expression.
-For the quickest visible change, configure the Pironman RGB effect as **Solid**.
-Lighting failures are logged without delaying Ada's animation, audio, or Gemini
-session.
-
-## Data flow
-
-```text
-Microphone
-  Chromium getUserMedia (AEC/NS/AGC)
-  -> PCM16 at 16 kHz
-  -> FastAPI WebSocket
-  -> Gemini 3.1 Flash Live
-
-Assistant audio
-  Gemini PCM16 at 24 kHz
-  -> FastAPI WebSocket
-  -> AudioWorklet jitter buffer
-  -> Web Audio analyser (mouth amplitude only)
-  -> speakers
-
-Vision
-  rpicam-vid (MJPEG 640x480 at 1 FPS)
-  -> validated JPEG frame
-  -> Gemini Live video input
-
-Pironman
-  Pironman service on port 34001
-  -> Ada backend validation and credential filtering
-  -> live hardware drawer and safe controls
-  -> expression color synchronization
-```
-
-The camera is captured natively by the backend, avoiding Chromium/PipeWire camera
-issues on Raspberry Pi. Chromium owns only the microphone path. No audio or video
-recordings are written to disk.
-
-## Verify
-
-Run the test suite:
+## Verification
 
 ```bash
 cd /home/naz/ada-pi
@@ -263,17 +225,24 @@ cd /home/naz/ada-pi
 .venv/bin/python -m pip check
 ```
 
-### Verify vision
+For a device smoke test:
 
-Start in the default activity mode, hold an object steady, and ask Ada what she
-sees. The backend should report:
+1. Confirm speech, interruption, and expression changes.
+2. Open **Pose** and verify camera framing and stable landmarks.
+3. Open **Detect** and verify current boxes without delayed frames.
+4. Calibrate posture and a clean desk.
+5. Confirm audio remains smooth while both local models run.
+6. Watch CPU load and alert timing during a representative session.
 
-```text
-Pi camera streaming (mode=activity, 640x480 MJPEG at 1 FPS)
-video frames forwarded (1 total, latest=... bytes)
+Logs are written to `logs/ada-pi.log`:
+
+```bash
+tail -F logs/ada-pi.log
 ```
 
-If `video frames forwarded` never appears, verify the camera independently:
+## Troubleshooting
+
+### No camera frames
 
 ```bash
 rpicam-hello --list-cameras
@@ -281,70 +250,24 @@ rpicam-vid --nopreview --timeout 3sec --codec mjpeg \
   --width 640 --height 480 --framerate 1 --output /dev/null
 ```
 
-### Verify interruption
+If no camera appears, power down the Pi and check the ribbon cable. Audio can
+continue without vision.
 
-1. Ask Ada for a long answer.
-2. While she is speaking, say “Wait, stop.” at a normal volume.
-3. Her playback and mouth movement should stop immediately.
-4. The backend should log `assistant interrupted`.
+### Ada interrupts herself
 
-If Ada interrupts herself while nobody is speaking, speaker output is leaking
-through Chromium's echo cancellation. Reduce speaker volume, increase physical
-separation between speaker and microphone, or improve their orientation. The
-Live session uses low start-of-speech sensitivity and 200 ms speech confirmation
-to reduce false barge-ins without disabling full duplex.
-
-## Troubleshooting
-
-### `uvicorn: command not found`
-
-Use the included script, which invokes Uvicorn through the project virtual
-environment:
-
-```bash
-./start.sh
-```
-
-### No camera frames
-
-```bash
-rpicam-hello --list-cameras
-```
-
-If it reports `No cameras available`, power down the Pi and check both ends and
-the orientation of the camera ribbon cable. The backend continues audio-only if
-native camera capture is unavailable.
-
-### Chromium GCM warning
-
-`DEPRECATED_ENDPOINT` messages from Chromium's GCM registration are unrelated to
-Gemini, microphone capture, and camera streaming.
+Run `wpctl status` and confirm `ada_aec_sink` and `ada_aec_source` are selected.
+Lower speaker volume or improve microphone/speaker separation if echo remains.
 
 ### Pironman drawer is offline
-
-Confirm the background service and API are available:
 
 ```bash
 systemctl status pironman5.service
 curl http://127.0.0.1:34001/api/v1.0/test
 ```
 
-The expected API response contains `"status":true`. If Pironman runs elsewhere,
-set `PIRONMAN_URL` in `.env` and restart Ada.
+Set the RGB effect to **Solid** for the fastest expression-color changes.
 
-### Case color does not follow the face
+### Gemini authentication or connection errors
 
-Set the Pironman RGB effect to **Solid**, confirm case lighting is enabled, and
-tap a manual expression button. Ada's log should show:
-
-```text
-POST /api/pironman/expression HTTP/1.1" 200 OK
-```
-
-A `503` response means Ada reached its own expression endpoint but the upstream
-Pironman API rejected or could not complete the color update.
-
-### API authentication errors
-
-Confirm `.env` contains a valid `GEMINI_API_KEY`, then restart `./start.sh` so a
-new Gemini Live session is created.
+Confirm `.env` has a valid `GEMINI_API_KEY`, restart `./start.sh`, and inspect
+the connection under **Settings** or in `logs/ada-pi.log`.

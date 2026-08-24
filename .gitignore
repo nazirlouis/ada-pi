@@ -3,3 +3,5 @@ __pycache__/
 *.py[cod]
 .env
 .chromium-kiosk/
+logs/
+data/
