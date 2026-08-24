@@ -29,6 +29,9 @@ const postureGemini = document.querySelector("#posture-gemini");
 const postureCalibration = document.querySelector("#posture-calibration");
 const postureEvents = document.querySelector("#posture-events");
 const habitReminder = document.querySelector("#habit-reminder");
+const waterCheckCountdown = document.querySelector("#water-check-countdown");
+const waterCheckTime = document.querySelector("#water-check-time");
+const waterCheckState = document.querySelector("#water-check-state");
 const habitsPanel = document.querySelector("#habits-panel");
 const habitsToggle = document.querySelector("#habits-toggle");
 const habitSettingsPanel = document.querySelector("#habit-settings-panel");
@@ -58,6 +61,8 @@ let lastPostureEventId = null;
 let reminderTimer = null;
 let habitSignalTimer = null;
 let activeHabitSignal = null;
+let activeWaterChallenge = null;
+let waterCountdownTimer = null;
 const HABIT_ACK_KEY = "adaAcknowledgedHabitOccurrences";
 let connectionInProgress = false;
 
@@ -100,10 +105,14 @@ function openHabitSettings() {
 }
 
 const MONITOR_FIELDS = {
-  sitting_too_long: [["maximum_sitting_minutes", "Maximum sitting (minutes)"], ["break_reset_minutes", "Break reset (minutes)"]],
-  phone_distraction: [["confirmation_minutes", "Confirm after (minutes)"], ["reset_minutes", "Reset after (minutes)"]],
-  desk_clutter: [["check_interval_seconds", "Check every (seconds)"], ["sustained_change_minutes", "Sustained change (minutes)"], ["reset_minutes", "Reset after (minutes)"]],
+  sitting_too_long: [["maximum_sitting_minutes", "Maximum sitting (minutes)", "number"], ["break_reset_minutes", "Break reset (minutes)", "number"]],
+  phone_distraction: [["confirmation_minutes", "Confirm after (minutes)", "number"], ["reset_minutes", "Reset after (minutes)", "number"]],
+  desk_clutter: [["check_interval_seconds", "Check every (seconds)", "number"], ["sustained_change_minutes", "Sustained change (minutes)", "number"], ["reset_minutes", "Reset after (minutes)", "number"]],
+  working_too_late: [["cutoff_time", "Nightly cutoff", "time"], ["morning_reset_time", "Morning reset", "time"]],
+  not_drinking_enough_water: [["reminder_interval_minutes", "Ask every (desk minutes)", "number"], ["response_window_seconds", "Time to drink (seconds)", "number"]],
+  junk_food: [["observation_window_seconds", "Gemini review (seconds)", "number"], ["reset_minutes", "Reset after clear (minutes)", "number"]],
 };
+const MANUAL_MONITORS = new Set(["working_too_late", "not_drinking_enough_water"]);
 
 async function updateVisualMonitor(key, values) {
   const response = await fetch(`/api/habits/monitors/${key}/settings`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify(values)});
@@ -115,12 +124,62 @@ function renderVisualMonitors(monitors = {}) {
   const root = document.querySelector("#visual-monitor-settings"); root.replaceChildren();
   for (const [key, monitor] of Object.entries(monitors)) {
     const card=document.createElement("article"); card.className="visual-monitor-card";
-    const controls=(MONITOR_FIELDS[key] || []).map(([field,label]) => `<label><span>${label}</span><input data-field="${field}" type="number" min="1" value="${monitor.settings[field]}"></label>`).join("");
-    card.innerHTML=`<div class="settings-section-heading"><strong>${habitLabel(key)}</strong><label class="monitor-toggle"><span>Enabled</span><input data-field="enabled" type="checkbox" ${monitor.settings.enabled ? "checked" : ""}></label></div><div class="monitor-live">${monitor.state.replaceAll("_"," ")} · ${Math.round((monitor.progress||0)*100)}%${key === "desk_clutter" ? ` · ${monitor.calibrated ? "calibrated" : "needs calibration"}` : ""}</div><div class="office-timing-grid">${controls}</div>${key === "desk_clutter" ? '<button class="desk-calibrate">Calibrate clean desk</button>' : ""}`;
-    card.querySelectorAll("input").forEach(input => input.addEventListener("change", () => updateVisualMonitor(key, {[input.dataset.field]: input.type === "checkbox" ? input.checked : Number(input.value)}).catch(error => document.querySelector("#visual-monitor-settings-status").textContent=error.message)));
+    const controls=(MONITOR_FIELDS[key] || []).map(([field,label,type]) => `<label><span>${label}</span><input data-field="${field}" type="${type}" ${type === "number" ? 'min="1"' : ""} value="${monitor.settings[field]}"></label>`).join("");
+    card.innerHTML=`<div class="settings-section-heading"><strong>${habitLabel(key)}</strong><label class="monitor-toggle"><span>Enabled</span><input data-field="enabled" type="checkbox" ${monitor.settings.enabled ? "checked" : ""}></label></div><div class="monitor-live">${monitor.state.replaceAll("_"," ")} · ${Math.round((monitor.progress||0)*100)}%${key === "desk_clutter" ? ` · ${monitor.calibrated ? "calibrated" : "needs calibration"}` : ""}</div><div class="office-timing-grid">${controls}</div>${key === "desk_clutter" ? '<button class="desk-calibrate">Calibrate clean desk</button>' : ""}${MANUAL_MONITORS.has(key) ? '<button class="monitor-run-now">Run check now</button>' : ""}`;
+    card.querySelectorAll("input").forEach(input => input.addEventListener("change", () => updateVisualMonitor(key, {[input.dataset.field]: input.type === "checkbox" ? input.checked : (input.type === "number" ? Number(input.value) : input.value)}).catch(error => document.querySelector("#visual-monitor-settings-status").textContent=error.message)));
     card.querySelector(".desk-calibrate")?.addEventListener("click", async () => { const response=await fetch("/api/habits/desk-clutter/calibration",{method:"POST"}); const result=await response.json(); document.querySelector("#visual-monitor-settings-status").textContent=response.ok ? "Calibration started · leave the clean desk and keep the scene still" : (result.detail||"Could not calibrate"); });
+    card.querySelector(".monitor-run-now")?.addEventListener("click", () => triggerVisualMonitor(key));
     root.append(card);
   }
+}
+
+async function triggerVisualMonitor(key) {
+  closeHabitSettings();
+  if (key === "not_drinking_enough_water") showWaterCountdown({phase:"prompting"});
+  const response = await fetch(`/api/habits/monitors/${key}/trigger`, {method:"POST"});
+  const result = await response.json();
+  if (!response.ok) {
+    showHabitSignal({kind:"occurrence", habit_key:key, rolling_occurrences:0, trigger_error:result.detail || "Could not run check"});
+    document.querySelector("#habit-signal-eyebrow").textContent = "CHECK UNAVAILABLE";
+    document.querySelector("#habit-signal-detail").textContent = result.detail || "Could not run check";
+  }
+}
+
+function showWaterCountdown(challenge) {
+  activeWaterChallenge = challenge;
+  waterCheckCountdown.classList.add("show");
+  waterCheckCountdown.setAttribute("aria-hidden", "false");
+  updateWaterCountdown();
+  if (!waterCountdownTimer) waterCountdownTimer = setInterval(updateWaterCountdown, 250);
+}
+
+function hideWaterCountdown() {
+  activeWaterChallenge = null;
+  clearInterval(waterCountdownTimer);
+  waterCountdownTimer = null;
+  waterCheckCountdown.classList.remove("show");
+  waterCheckCountdown.setAttribute("aria-hidden", "true");
+}
+
+function updateWaterCountdown() {
+  if (!activeWaterChallenge) return;
+  if (activeWaterChallenge.phase === "prompting") {
+    waterCheckTime.textContent = "···";
+    waterCheckState.textContent = "Ada is asking you to drink";
+  } else if (activeWaterChallenge.phase === "reviewing") {
+    waterCheckTime.textContent = "✓";
+    waterCheckState.textContent = "Gemini is reviewing";
+  } else {
+    const remaining = Math.max(0, Math.ceil(Number(activeWaterChallenge.deadline || 0) - Date.now() / 1000));
+    waterCheckTime.textContent = String(remaining);
+    waterCheckState.textContent = remaining ? "Drink water now" : "Finishing observation";
+  }
+}
+
+function renderWaterCheck(monitors = {}) {
+  const water = monitors.not_drinking_enough_water;
+  if (water?.challenge) showWaterCountdown(water.challenge);
+  else if (activeWaterChallenge) hideWaterCountdown();
 }
 
 async function refreshVisualMonitors() {
@@ -410,6 +469,7 @@ function renderPosture(status, announce = true) {
   }
   if (status.events) renderPostureEvents(status.events);
   if (status.habits) renderHabits(status.habits.map(habit => ({...habit, monitor: status.monitors?.[habit.habit_key]})));
+  if (status.monitors) renderWaterCheck(status.monitors);
   if (status.monitors && habitSettingsPanel.classList.contains("open") && !document.querySelector("#visual-monitor-settings")?.contains(document.activeElement)) renderVisualMonitors(status.monitors);
   const pendingNotification = status.notifications?.[0];
   if (pendingNotification) showHabitSignal({kind:"occurrence", habit_key:pendingNotification.habit_key, notification_id:pendingNotification.id, ...pendingNotification.payload});

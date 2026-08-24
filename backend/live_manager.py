@@ -17,9 +17,11 @@ class LiveSessionManager:
     def __init__(
         self, prompt_getter: Callable[[], str],
         office_state_getter: Callable[[], dict[str, Any]] | None = None,
+        habit_state_getter: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.prompt_getter = prompt_getter
         self.office_state_getter = office_state_getter
+        self.habit_state_getter = habit_state_getter
         self.provider: Any = None
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
@@ -44,6 +46,7 @@ class LiveSessionManager:
         while not self._stopping:
             provider = create_provider(
                 self.prompt_getter(), office_state_getter=self.office_state_getter,
+                habit_state_getter=self.habit_state_getter,
             )
             provider.session_id = "persistent"
             self.provider = provider

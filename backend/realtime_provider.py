@@ -80,7 +80,8 @@ class RealtimeProvider(abc.ABC):
 class GeminiLiveProvider(RealtimeProvider):
     """Gemini 3.1 Flash Live over Google's asynchronous Live API SDK."""
 
-    def __init__(self, instructions: str | None = None, office_state_getter: Any = None) -> None:
+    def __init__(self, instructions: str | None = None, office_state_getter: Any = None,
+                 habit_state_getter: Any = None) -> None:
         self.api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         self.model = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
         self.voice = os.environ.get("GEMINI_LIVE_VOICE", "Kore")
@@ -98,7 +99,9 @@ class GeminiLiveProvider(RealtimeProvider):
             " Camera frames provide your current visual context. When the user asks "
             "what you see, ground the answer only in the newest clear frame. Do not "
             "guess an object's identity from an ambiguous or blurred view; briefly "
-            "ask the user to hold it steady or move it closer instead."
+            "ask the user to hold it steady or move it closer instead. When the user "
+            "asks what habits are tracked, their habit status, or their progress, always "
+            "call get_habit_status and ground the answer in its current result."
         )
         self._client: Any = None
         self._session_context: Any = None
@@ -109,6 +112,7 @@ class GeminiLiveProvider(RealtimeProvider):
         self.resumption_handle: str | None = None
         self.go_away_time_left: str | None = None
         self.office_state_getter = office_state_getter
+        self.habit_state_getter = habit_state_getter
 
     async def connect(self, resumption_handle: str | None = None) -> None:
         if not self.api_key:
@@ -192,6 +196,40 @@ class GeminiLiveProvider(RealtimeProvider):
                         "properties": {},
                         "additionalProperties": False,
                     },
+                }, {
+                    "name": "report_habit_observation",
+                    "description": (
+                        "Reports the structured result of a water or junk-food camera "
+                        "observation requested by the ADA backend. Call this only when a "
+                        "backend prompt supplies a challenge_id, after reviewing the full "
+                        "observation window. Mere containers or food presence are not consumption."
+                    ),
+                    "behavior": types.Behavior.NON_BLOCKING,
+                    "parameters_json_schema": {
+                        "type": "object",
+                        "properties": {
+                            "challenge_id": {"type": "string"},
+                            "habit_key": {"type": "string", "enum": ["not_drinking_enough_water", "junk_food"]},
+                            "observed": {"type": "boolean"},
+                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                            "reason": {"type": "string"},
+                            "item_identified": {"type": "string", "description": "For junk-food checks, the specific visible food or drink; empty when none is identifiable."},
+                            "consumption_visible": {"type": "boolean", "description": "For junk-food checks, true only when actual eating or drinking is visibly confirmed."},
+                            "classified_unhealthy": {"type": "boolean", "description": "For junk-food checks, true only when the identified item clearly belongs to the configured unhealthy categories."},
+                        },
+                        "required": ["challenge_id", "habit_key", "observed", "confidence", "reason"],
+                        "additionalProperties": False,
+                    },
+                }, {
+                    "name": "get_habit_status",
+                    "description": (
+                        "Returns every habit Ada tracks, including habits with no occurrences, "
+                        "their lifecycle status, rolling seven-day occurrences and days, and "
+                        "current monitor state and progress. Use this whenever the user asks "
+                        "what habits are tracked or how their habits are progressing."
+                    ),
+                    "behavior": types.Behavior.NON_BLOCKING,
+                    "parameters_json_schema": {"type": "object", "properties": {}, "additionalProperties": False},
                 }]
             }],
         }
@@ -280,6 +318,12 @@ class GeminiLiveProvider(RealtimeProvider):
                             result = {"output": f"Ada is now {requested}"}
                         elif call.name == "get_office_state" and self.office_state_getter is not None:
                             result = {"output": self.office_state_getter()}
+                        elif call.name == "report_habit_observation":
+                            args = dict(call.args or {})
+                            yield ProviderEvent("habit_observation", args)
+                            result = {"output": "Observation delivered to the habit monitor"}
+                        elif call.name == "get_habit_status" and self.habit_state_getter is not None:
+                            result = {"output": self.habit_state_getter()}
                         else:
                             result = {"error": "Unsupported or unavailable function"}
                         function_responses.append(types.FunctionResponse(
@@ -387,8 +431,10 @@ class GeminiLiveProvider(RealtimeProvider):
                 logger.debug("Gemini client close did not complete cleanly", exc_info=True)
 
 
-def create_provider(instructions: str | None = None, office_state_getter: Any = None) -> RealtimeProvider:
+def create_provider(instructions: str | None = None, office_state_getter: Any = None,
+                    habit_state_getter: Any = None) -> RealtimeProvider:
     return GeminiLiveProvider(
         instructions=instructions,
         office_state_getter=office_state_getter,
+        habit_state_getter=habit_state_getter,
     )

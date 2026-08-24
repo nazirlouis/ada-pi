@@ -79,9 +79,37 @@ async def notify_office_light_habit(alert: dict[str, object]) -> None:
     await live_manager.send_text_turn(message)
 
 
+def habit_tool_snapshot() -> dict[str, object]:
+    """Return all tracked habits and live state without exposing settings secrets."""
+    profiles = {str(item["habit_key"]): item for item in posture_store.habit_profiles()}
+    monitors = visual_habits.snapshot()
+    habits: list[dict[str, object]] = []
+    for key in ["posture", *monitors.keys(), "office_lights_left_on"]:
+        profile = profiles.get(key)
+        item: dict[str, object] = {
+            "habit_key": key,
+            "lifecycle_status": profile["status"] if profile else "not_observed",
+            "rolling_occurrences": int(profile["rolling_occurrences"]) if profile else 0,
+            "rolling_days": int(profile["rolling_days"]) if profile else 0,
+        }
+        if key in monitors:
+            monitor = monitors[key]
+            item.update(enabled=bool(monitor["settings"]["enabled"]),
+                        monitor_state=monitor["state"], progress=monitor["progress"])
+        elif key == "posture":
+            status = posture_monitor.status()
+            item.update(enabled=True, monitor_state=status["state"], calibrated=status["calibrated"])
+        else:
+            office = office_light_monitor.snapshot()
+            item.update(enabled=True, monitor_state=office.get("status", "unavailable"))
+        habits.append(item)
+    return {"window_days": 7, "established_requirements": {"occurrences": 10, "days": 3}, "habits": habits}
+
+
 live_manager = LiveSessionManager(
     lambda: posture_store.system_prompt(DEFAULT_ADA_INSTRUCTIONS),
     office_state_getter=lambda: office_light_monitor.snapshot(),
+    habit_state_getter=habit_tool_snapshot,
 )
 pose_service = PoseService(camera, pose_estimator, posture_monitor, posture_verifier, live_manager)
 home_assistant = HomeAssistantClient()
@@ -245,6 +273,16 @@ async def update_visual_monitor_settings(habit_key: str, request: Request) -> di
         return visual_habits.snapshot()[habit_key]
     except KeyError as exc: raise HTTPException(status_code=404, detail="Unknown monitor") from exc
     except (ValueError, json.JSONDecodeError) as exc: raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/habits/monitors/{habit_key}/trigger", status_code=202)
+async def trigger_visual_monitor(habit_key: str) -> dict[str, object]:
+    try:
+        return await visual_habits.trigger_check(habit_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/habits/desk-clutter/calibration", status_code=202)

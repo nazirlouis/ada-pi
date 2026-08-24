@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import time
 from contextlib import suppress
 
 logger = logging.getLogger("voice.camera")
@@ -16,6 +17,7 @@ class CameraHub:
     def __init__(self, fps: int = 5) -> None:
         self.fps = fps
         self.latest_frame: bytes | None = None
+        self.latest_frame_at: float | None = None
         self._generation = 0
         self._condition = asyncio.Condition()
         self._process: asyncio.subprocess.Process | None = None
@@ -65,6 +67,7 @@ class CameraHub:
                     frame = bytes(buffer[start:end + 2])
                     del buffer[:end + 2]
                     self.latest_frame = frame
+                    self.latest_frame_at = time.monotonic()
                     captured += 1
                     if captured == 1:
                         logger.info("Pi camera streaming (640x480 MJPEG at %d FPS)", self.fps)
@@ -90,6 +93,11 @@ class CameraHub:
                 frame = self.latest_frame
             if frame is not None:
                 yield frame
+
+    @property
+    def generation(self) -> int:
+        """Monotonic frame sequence for latest-frame-only consumers."""
+        return self._generation
 
     async def stop(self) -> None:
         if self._capture_task:

@@ -54,6 +54,22 @@ class OfficeStateToolSession(ExpressionToolSession):
         self.provider._closed = True
 
 
+class HabitObservationToolSession(ExpressionToolSession):
+    async def receive(self):
+        yield types.LiveServerMessage(tool_call=types.LiveServerToolCall(function_calls=[
+            types.FunctionCall(id="habit-1",name="report_habit_observation",args={"challenge_id":"water-1","habit_key":"not_drinking_enough_water","observed":True,"confidence":.9,"reason":"visible drink"})
+        ]))
+        self.provider._closed=True
+
+
+class HabitStatusToolSession(ExpressionToolSession):
+    async def receive(self):
+        yield types.LiveServerMessage(tool_call=types.LiveServerToolCall(function_calls=[
+            types.FunctionCall(id="habit-status-1",name="get_habit_status",args={})
+        ]))
+        self.provider._closed=True
+
+
 class ProviderEventTests(unittest.IsolatedAsyncioTestCase):
     def test_live_config_guards_long_full_duplex_sessions(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "backend/realtime_provider.py").read_text()
@@ -99,6 +115,23 @@ class ProviderEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events, [])
         self.assertEqual(session.responses[0].response, {"output": state})
         self.assertEqual(session.responses[0].name, "get_office_state")
+
+    async def test_habit_observation_tool_emits_structured_event(self) -> None:
+        provider=GeminiLiveProvider(); session=HabitObservationToolSession(provider); provider._session=session
+        events=[event async for event in provider.events()]
+        self.assertEqual(events[0].type,"habit_observation")
+        self.assertEqual(events[0].data["challenge_id"],"water-1")
+        self.assertTrue(events[0].data["observed"])
+        self.assertEqual(session.responses[0].name,"report_habit_observation")
+
+    async def test_habit_status_tool_returns_complete_snapshot(self) -> None:
+        snapshot={"window_days":7,"habits":[{"habit_key":"posture","lifecycle_status":"possible"}]}
+        provider=GeminiLiveProvider(habit_state_getter=lambda:snapshot)
+        session=HabitStatusToolSession(provider); provider._session=session
+        events=[event async for event in provider.events()]
+        self.assertEqual(events,[])
+        self.assertEqual(session.responses[0].name,"get_habit_status")
+        self.assertEqual(session.responses[0].response,{"output":snapshot})
 
     async def test_video_frame_uses_live_video_input(self) -> None:
         class VideoSession:

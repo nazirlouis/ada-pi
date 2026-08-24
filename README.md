@@ -9,7 +9,7 @@ face, and helps you notice recurring desk habits without recording your day.
 - Talk and listen at the same time, with immediate voice interruption.
 - Use the camera to answer questions about objects and the current scene.
 - Show eleven expressive faces and synchronize compatible Pironman case lighting.
-- Track posture, long desk sessions, distracting phone use, and desk clutter.
+- Track posture, long desk sessions, late-night work, hydration, distracting phone use, junk food, and desk clutter.
 - Notice office lights left on using Home Assistant and local presence detection.
 - Show live MoveNet pose and EfficientDet object-detection previews.
 - Display Pironman telemetry and safe hardware controls.
@@ -40,6 +40,10 @@ The kiosk controls provide:
 - **Hardware** — view Pironman telemetry and safe controls.
 - **Disconnect** — disconnect the microphone while background alerts remain active.
 - **Exit** — stop the browser, backend, camera, and Gemini session.
+
+You can also ask Ada “What habits are you tracking?” or “How are my habits doing?”
+She uses a read-only Live tool to retrieve the current complete tracker instead
+of relying on conversational memory.
 
 ## Habit coaching
 
@@ -88,6 +92,37 @@ When nobody has been visible for 30 seconds, Ada compares the scene with the
 baseline. A change must persist before Gemini receives one current frame to
 confirm clutter with at least 65% confidence. Speech waits until you return; the
 visual alert remains available immediately. Cleanup or recalibration resets it.
+
+### Working too late
+
+Ada uses desk presence and the configured local timezone to recognize work after
+the nightly cutoff, which defaults to 10:00 PM. She records at most one occurrence
+between that cutoff and the 6:00 AM reset, including when the session crosses
+midnight. Both times are configurable under **Habit settings**. Select **Run
+check now** to return to Ada's face and evaluate the current cutoff and presence
+without creating a false occurrence outside the late window.
+
+### Not drinking enough water
+
+After each accumulated hour of desk presence, Ada asks you to visibly drink
+water. Once she finishes the prompt, the newest camera frames are sent to Gemini
+Live for a 15-second observation. A confirmed drink resets the timer without an
+event; a high-confidence confirmed miss or ignored request records one
+occurrence. Camera, Gemini, or inconclusive-verdict failures never count against
+you and retry later. During the check, Ada's main screen shows the spoken-prompt
+state, a server-synchronized 15-to-0 countdown, and the Gemini review state.
+Select **Run check now** under Habit Settings to start the same flow immediately.
+
+### Junk food
+
+Repeated local hand-to-mouth cues only trigger a 15-second Gemini Live review;
+the gesture itself is never treated as junk-food evidence. Ada records only when
+Gemini identifies a specific unhealthy item and confirms high-confidence visible
+consumption of it,
+including sugary drinks, candy, chips, pastries, desserts, fast food, and heavily
+processed snacks or meals. Face touching, scratching, empty-hand gestures,
+ambiguous chewing, mere food presence, and ambiguous meals do not count.
+The episode resets after 30 minutes without eating evidence.
 
 ### Office lights left on
 
