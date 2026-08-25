@@ -538,14 +538,17 @@ function drawPoseFrame(bitmap) {
   poseContext.drawImage(bitmap, 0, 0);
   bitmap.close();
   if (!poseResult) return;
-  const points = poseResult.keypoints;
+  const points = Array.isArray(poseResult.keypoints) ? poseResult.keypoints : [];
+  const visible = point => Number.isFinite(point?.x) && Number.isFinite(point?.y)
+    && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1
+    && (Number(point.score) >= .25 || (poseResult.backend === "hailo" && poseResult.keypoint_scores_repaired));
   poseContext.lineWidth = 4;
   poseContext.lineCap = "round";
   poseContext.strokeStyle = "#17dfff";
   poseContext.shadowColor = "#17dfff";
   poseContext.shadowBlur = 8;
   for (const [start, end] of POSE_CONNECTIONS) {
-    if (points[start].score < .25 || points[end].score < .25) continue;
+    if (!visible(points[start]) || !visible(points[end])) continue;
     poseContext.beginPath();
     poseContext.moveTo(points[start].x * width, points[start].y * height);
     poseContext.lineTo(points[end].x * width, points[end].y * height);
@@ -553,7 +556,7 @@ function drawPoseFrame(bitmap) {
   }
   poseContext.fillStyle = "#ff3dbe";
   for (const point of points) {
-    if (point.score < .25) continue;
+    if (!visible(point)) continue;
     poseContext.beginPath();
     poseContext.arc(point.x * width, point.y * height, 6, 0, Math.PI * 2);
     poseContext.fill();
@@ -563,7 +566,9 @@ function drawPoseFrame(bitmap) {
   const elapsed = performance.now() - poseFpsStarted;
   if (elapsed >= 1000) {
     const fps = (poseFrameCount * 1000 / elapsed).toFixed(1);
-    poseStatus.textContent = `Tracking · ${fps} FPS · ${poseResult.inference_ms} ms inference`;
+    const poseModel = String(poseResult.model || "YOLOv8 Pose").replaceAll("_", " ");
+    const engine = poseResult.backend === "hailo" ? `Hailo-8 · ${poseModel}` : "CPU fallback · MoveNet";
+    poseStatus.textContent = `${engine} · ${fps} FPS · ${poseResult.inference_ms} ms inference`;
     poseFrameCount = 0;
     poseFpsStarted = performance.now();
   }
@@ -649,7 +654,8 @@ function drawDetectionFrame(bitmap) {
   if (elapsed >= 1000) {
     const fps = (detectionFrameCount * 1000 / elapsed).toFixed(1);
     const count = detectionResult.detections.length;
-    detectStatus.textContent = `Detecting · ${fps} FPS · ${detectionResult.inference_ms} ms · ${count} object${count === 1 ? "" : "s"}`;
+    const engine = detectionResult.backend === "hailo" ? "Hailo-8 · YOLOv8m" : "CPU fallback · EfficientDet";
+    detectStatus.textContent = `${engine} · ${fps} FPS · ${detectionResult.inference_ms} ms · ${count} object${count === 1 ? "" : "s"}`;
     detectionFrameCount = 0;
     detectionFpsStarted = performance.now();
   }
@@ -785,15 +791,29 @@ function setHardwareOpen(open) {
 async function refreshHardware() {
   const state = document.querySelector("#hardware-state");
   try {
-    const response = await fetch("/api/pironman", { cache: "no-store" });
-    const snapshot = await response.json();
+    const [response, visionResponse] = await Promise.all([
+      fetch("/api/pironman", { cache: "no-store" }),
+      fetch("/api/vision/status", { cache: "no-store" }),
+    ]);
+    const [snapshot, vision] = await Promise.all([response.json(), visionResponse.json()]);
+    const visionState = document.querySelector("#vision-hardware-state");
+    const model = vision.models?.detection || "unknown model";
+    const hailoTemperature = Number.isFinite(vision.hailo_8_temperature) ? ` · ${vision.hailo_8_temperature}°C` : "";
+    visionState.textContent = vision.backend === "hailo" ? `Vision · Hailo-8 · ${model}${hailoTemperature}` : `Vision · CPU fallback · ${vision.last_error || model}${hailoTemperature}`;
+    visionState.classList.toggle("offline", vision.backend !== "hailo");
     state.textContent = snapshot.online ? "Online · live updates every 3 seconds" : (snapshot.error || "Dashboard offline");
     state.classList.toggle("offline", !snapshot.online);
     document.querySelector("#pm-dashboard-link").href = snapshot.dashboard_url;
-    if (!snapshot.online) return;
+    const acceleratorTelemetry = Object.fromEntries(
+      Object.entries(vision).filter(([key]) => key.startsWith("hailo_8_") && key !== "hailo_8_temperature_error")
+    );
+    if (!snapshot.online) {
+      renderTelemetry(acceleratorTelemetry);
+      return;
+    }
     const data = snapshot.data || {};
     const config = snapshot.config || {};
-    renderTelemetry(data);
+    renderTelemetry({ ...data, ...acceleratorTelemetry });
     if (!hardwareConfigLoaded) {
       document.querySelector("#pm-rgb-enable").checked = config.rgb_enable ?? false;
       document.querySelector("#pm-oled-enable").checked = config.oled_enable ?? false;

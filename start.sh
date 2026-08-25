@@ -13,6 +13,13 @@ START_HOME_ASSISTANT="${ADA_START_HOME_ASSISTANT:-}"
 HOME_ASSISTANT_COMPOSE_FILE="${ADA_HOME_ASSISTANT_COMPOSE_FILE:-}"
 HOME_ASSISTANT_URL="${HOME_ASSISTANT_URL:-}"
 
+if systemctl is-enabled --quiet ada-fan-max.service 2>/dev/null; then
+  systemctl start ada-fan-max.service 2>/dev/null || true
+else
+  echo "WARNING: Maximum-fan service is not installed." >&2
+  echo "Run once: sudo '$PROJECT_DIR/scripts/install_max_fan_service.sh'" >&2
+fi
+
 env_value() {
   "$VENV_PYTHON" -c \
     'from dotenv import dotenv_values; import sys; print(dotenv_values(sys.argv[1]).get(sys.argv[2], "") or "")' \

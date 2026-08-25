@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep ADA Pi Pro Max fans at maximum speed
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/ada-pi/ada-fan-max.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

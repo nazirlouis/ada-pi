@@ -746,7 +746,8 @@ class PoseService:
                 async with self._condition:
                     self._generation += 1
                     self._condition.notify_all()
-                await asyncio.sleep(max(0, 1 / self.fps - (time.monotonic() - started)))
+                target_fps = float(getattr(self.estimator, "target_fps", self.fps))
+                await asyncio.sleep(max(0, 1 / target_fps - (time.monotonic() - started)))
         finally:
             async with self._condition:
                 self._condition.notify_all()

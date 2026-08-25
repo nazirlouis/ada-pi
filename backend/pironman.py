@@ -107,6 +107,17 @@ class PironmanClient:
             return True
         return False
 
+    async def ensure_fans_max(self) -> bool:
+        """Keep the case fans in mode 0 (always on at full speed)."""
+        config = await self.request("/api/v1.0/get-config")
+        system = config.get("system", config) if isinstance(config, dict) else {}
+        if "gpio_fan_mode" not in system:
+            return False
+        if system.get("gpio_fan_mode") != 0:
+            await self.update_controls({"gpio_fan_mode": 0})
+            return True
+        return False
+
     async def update_controls(self, controls: dict[str, Any]) -> dict[str, Any]:
         validated = validate_controls(controls)
         routes = {

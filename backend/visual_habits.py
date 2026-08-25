@@ -259,25 +259,30 @@ class VisualHabitService:
 
     async def _run(self) -> None:
         await self.camera.start()
+        last_monitor_tick = 0.0
         while True:
             started, now = time.monotonic(), time.time()
             frame = self.camera.latest_frame
-            presence = self._presence()
-            await self._process_sitting(now, presence)
-            await self._process_late_work(now, presence)
-            await self._process_water(now, presence)
-            if frame and (self.settings["phone_distraction"]["enabled"] or self.settings["junk_food"]["enabled"]):
+            if frame:
                 result = await asyncio.to_thread(self.detector.infer, frame)
                 self.latest_detection, self.latest_detection_frame = result, frame
                 async with self._condition:
                     self._detection_generation += 1; self._condition.notify_all()
+            if now - last_monitor_tick >= 2:
+                last_monitor_tick = now
+                presence = self._presence()
+                await self._process_sitting(now, presence)
+                await self._process_late_work(now, presence)
+                await self._process_water(now, presence)
                 if self.settings["phone_distraction"]["enabled"]:
-                    await self._process_phone(now, phone_near_user(result.get("detections", []), self.pose_service.latest_result))
-            await self._process_junk_food(now, hand_near_face(self.pose_service.latest_result))
-            if frame: await self._process_clutter(now, frame, presence)
-            if presence:
-                for note in self.store.pending_voice_notifications(): await self._deliver(note)
-            await asyncio.sleep(max(0, 2 - (time.monotonic() - started)))
+                    detections = self.latest_detection.get("detections", []) if self.latest_detection else []
+                    await self._process_phone(now, phone_near_user(detections, self.pose_service.latest_result))
+                await self._process_junk_food(now, hand_near_face(self.pose_service.latest_result))
+                if frame: await self._process_clutter(now, frame, presence)
+                if presence:
+                    for note in self.store.pending_voice_notifications(): await self._deliver(note)
+            target_fps = float(getattr(self.detector, "target_fps", .5))
+            await asyncio.sleep(max(0, 1 / target_fps - (time.monotonic() - started)))
 
     async def _process_sitting(self, now: float, present: bool) -> None:
         key, state, cfg = "sitting_too_long", self.states["sitting_too_long"], self.settings["sitting_too_long"]

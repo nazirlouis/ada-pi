@@ -103,6 +103,31 @@ class PironmanClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await client.ensure_oled_on())
         client.update_controls.assert_not_awaited()
 
+    async def test_fan_guard_sets_always_on_mode(self) -> None:
+        client = PironmanClient()
+        client.request = AsyncMock(return_value={
+            "system": {"gpio_fan_mode": 3}
+        })
+        client.update_controls = AsyncMock(return_value={})
+        self.assertTrue(await client.ensure_fans_max())
+        client.update_controls.assert_awaited_once_with({"gpio_fan_mode": 0})
+
+    async def test_fan_guard_does_not_rewrite_always_on_mode(self) -> None:
+        client = PironmanClient()
+        client.request = AsyncMock(return_value={
+            "system": {"gpio_fan_mode": 0}
+        })
+        client.update_controls = AsyncMock(return_value={})
+        self.assertFalse(await client.ensure_fans_max())
+        client.update_controls.assert_not_awaited()
+
+    async def test_fan_guard_ignores_variants_without_gpio_fans(self) -> None:
+        client = PironmanClient()
+        client.request = AsyncMock(return_value={"system": {}})
+        client.update_controls = AsyncMock(return_value={})
+        self.assertFalse(await client.ensure_fans_max())
+        client.update_controls.assert_not_awaited()
+
     def test_every_ada_expression_has_a_case_color(self) -> None:
         self.assertEqual(set(EXPRESSION_COLORS), {
             "neutral", "sassy", "amused", "skeptical", "annoyed", "mad",

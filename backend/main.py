@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -13,15 +14,16 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from PIL import Image
+
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .realtime_provider import DEFAULT_ADA_INSTRUCTIONS
 from .pironman import EXPRESSION_COLORS, PironmanClient, PironmanError
 from .camera import CameraHub
-from .detection import ObjectDetector
-from .pose import PoseEstimator
+from .hailo_vision import HAILO_ROTATE_180, VisionBackendManager, letterbox
 from .posture import PoseService, PostureMonitor, PostureStore
 from .posture_verifier import GeminiClutterVerifier, GeminiPostureVerifier
 from .visual_habits import VisualHabitService
@@ -58,8 +60,9 @@ app = FastAPI(title="Pi Full-Duplex Voice Prototype")
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 pironman = PironmanClient()
 camera = CameraHub(fps=5)
-pose_estimator = PoseEstimator()
-object_detector = ObjectDetector()
+vision_backend = VisionBackendManager()
+pose_estimator = vision_backend.pose
+object_detector = vision_backend.detection
 posture_store = PostureStore(Path(os.environ.get("ADA_HABIT_DB", ROOT / "data" / "habits.db")))
 posture_monitor = PostureMonitor(posture_store)
 posture_verifier = GeminiPostureVerifier()
@@ -130,11 +133,17 @@ async def sync_expression_lighting(expression: str) -> None:
 
 
 async def keep_oled_awake() -> None:
-    """Enforce the always-on OLED policy while Ada is running."""
+    """Enforce Ada's always-on display and maximum-cooling policies."""
     while True:
         try:
-            changed = await pironman.ensure_oled_on()
-            if changed:
+            fans_changed = await pironman.ensure_fans_max()
+            if fans_changed:
+                logger.info("Pironman fans set to always-on maximum speed")
+        except PironmanError as exc:
+            logger.warning("could not enforce Pironman maximum fan policy: %s", exc)
+        try:
+            oled_changed = await pironman.ensure_oled_on()
+            if oled_changed:
                 logger.info("Pironman OLED enabled with sleep disabled")
         except PironmanError as exc:
             logger.warning("could not enforce Pironman OLED policy: %s", exc)
@@ -162,6 +171,7 @@ async def stop_oled_guard() -> None:
     await office_light_monitor.stop()
     await visual_habits.stop()
     await pose_service.stop()
+    vision_backend.close()
     await live_manager.stop()
     await camera.stop()
 
@@ -178,6 +188,36 @@ async def disable_frontend_cache(request, call_next):
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(FRONTEND / "index.html")
+
+
+@app.get("/api/vision/status")
+async def vision_status() -> dict[str, object]:
+    """Expose the active accelerator, models, fallback, and last error."""
+    status = await asyncio.to_thread(vision_backend.status, True)
+    return {**status, "camera": {
+        "frame_bytes": len(camera.latest_frame) if camera.latest_frame else 0,
+        "frame_age_seconds": round(time.monotonic() - camera.latest_frame_at, 3) if camera.latest_frame_at else None,
+        "generation": camera.generation,
+    }}
+
+
+@app.get("/api/vision/frame.jpg")
+async def vision_frame() -> Response:
+    """Return the exact latest JPEG used by local vision for diagnostics."""
+    if camera.latest_frame is None:
+        raise HTTPException(status_code=503, detail="No camera frame is available")
+    return Response(camera.latest_frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/vision/input.jpg")
+async def vision_input() -> Response:
+    """Return the exact letterboxed RGB image submitted to both Hailo models."""
+    if camera.latest_frame is None:
+        raise HTTPException(status_code=503, detail="No camera frame is available")
+    rgb, _, _ = await asyncio.to_thread(letterbox, camera.latest_frame, 640, HAILO_ROTATE_180)
+    with io.BytesIO() as encoded:
+        Image.fromarray(rgb).save(encoded, format="JPEG", quality=90)
+        return Response(encoded.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/pironman")
@@ -428,7 +468,8 @@ async def pose_socket(browser: WebSocket) -> None:
     """Stream the shared background pose results and camera frames."""
     await browser.accept()
     try:
-        await send_json(browser, "pose_status", message="Pose tracking active")
+        status = vision_backend.status()
+        await send_json(browser, "pose_status", message=f"Pose tracking active · {status['backend']}", **status)
         async for result, frame in pose_service.results():
             await send_json(browser, "pose", **result)
             await browser.send_bytes(frame)
@@ -486,8 +527,8 @@ async def detection_socket(browser: WebSocket) -> None:
     # cannot create a competing camera inference loop.
     await browser.accept()
     try:
-        await send_json(browser, "detection_status", message="Loading EfficientDet-Lite0…")
-        await send_json(browser, "detection_status", message="Object detection active")
+        status = vision_backend.status()
+        await send_json(browser, "detection_status", message=f"Object detection active · {status['backend']}", **status)
         async for result, frame in visual_habits.detections():
             await send_json(browser, "detection", **result)
             await browser.send_bytes(frame)
