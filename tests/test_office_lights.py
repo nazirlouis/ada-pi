@@ -86,6 +86,20 @@ class OfficeLightMonitorTests(unittest.TestCase):
         self.monitor.evaluate(snapshot(person="unknown"), False, self.start + timedelta(minutes=18))
         self.assertIsNone(self.monitor.evaluate(snapshot(person="unknown"), False, self.start + timedelta(minutes=30)))
 
+    def test_person_state_normalizes_whitespace_and_case(self):
+        spaced_unknown = snapshot(person=" UNKNOWN ")
+        self.monitor.evaluate(spaced_unknown, False, self.start)
+        alert = self.monitor.evaluate(
+            spaced_unknown,
+            False,
+            self.start + timedelta(minutes=5),
+        )
+        self.assertIsNone(alert)
+        self.assertEqual(
+            self.monitor.latest["absence_reason"],
+            "person_state_unavailable",
+        )
+
     def test_timing_settings_validate_and_survive_restart(self):
         settings = self.monitor.update_settings({
             "grace_minutes": 12,
