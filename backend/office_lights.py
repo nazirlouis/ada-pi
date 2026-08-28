@@ -123,7 +123,7 @@ class OfficeLightMonitor:
                 candidate_since = None
                 reset_at = None
 
-            person_state = snapshot.person_state.lower()
+            person_state = snapshot.person_state.strip().lower()
             if person_state in INVALID_PERSON_STATES:
                 condition = False
                 absence_reason = "person_state_unavailable"
