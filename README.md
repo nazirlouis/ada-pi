@@ -398,3 +398,7 @@ start.sh       Backend and Chromium kiosk launcher
 ```
 
 When reporting a problem, include your Raspberry Pi OS version, Python version, relevant hardware, the output of `/api/vision/status`, and the smallest relevant section of `logs/ada-pi.log`. Remove API keys, Home Assistant tokens, and personal entity names before sharing logs or configuration.
+
+## License
+
+ADA Pi is open source under the [MIT License](LICENSE).
