@@ -1,0 +1,9 @@
+# wiki_extension — list first; install requires explicit confirmation.
+name: wiki_extension
+tier: full
+turns:
+  - user: List the installed Wiki extensions.
+    expect:
+      calls_any: [wiki_extension]
+      timeout_s: 90
+      settle_s: 10

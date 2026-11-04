@@ -94,6 +94,11 @@ tools:
     policy: confirmed
     secondary_allowed: false
     timeout_s: 60
+  wiki_extension:
+    module: wiki_extension
+    policy: confirmed
+    secondary_allowed: false
+    timeout_s: 120
   weather_station:
     module: weather_station
     policy: read
