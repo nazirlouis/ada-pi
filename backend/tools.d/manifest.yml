@@ -104,3 +104,13 @@ tools:
     policy: read
     secondary_allowed: true
     timeout_s: 120
+  ada_opencode:
+    module: ada_opencode
+    policy: read
+    secondary_allowed: false
+    timeout_s: 30
+  ada_opencode_dispatch:
+    module: ada_opencode_dispatch
+    policy: confirmed
+    secondary_allowed: false
+    timeout_s: 45

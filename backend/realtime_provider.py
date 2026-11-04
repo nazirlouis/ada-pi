@@ -760,6 +760,20 @@ DEVIN_INSTRUCTIONS = (
     "'Failed jobs' section; never list failed jobs among the active ones."
 )
 
+OPENCODE_INSTRUCTIONS = (
+    " OpenCode is a bounded executor behind Ada, not the user-facing "
+    "responder. For implementation work, use ada_opencode with action="
+    "'preflight' on the exact card first; require an explicit model, "
+    "LiteLLM key alias, profile, target host, artifact, verifier evidence, "
+    "and max USD/turn/token/wall-time/retry limits. Only after the user "
+    "approves the exact preflight may you call ada_opencode_dispatch. "
+    "Never silently change the executor, model, key, host, profile, or "
+    "limits, and never claim a job ran without a board/artifact receipt. "
+    "Use ada_opencode action='status' or 'receipts' for follow-up. Plain "
+    "questions and status/spend questions stay in Ada and must not start "
+    "OpenCode."
+)
+
 # Summary rollup tools — tools-merge-calendar-plan (2026-10-05) folded
 # ada_daily_summary/ada_weekly_comparison into plan_day (period='week' /
 # day=<date>); their guidance now lives in CALENDAR_INSTRUCTIONS so
@@ -3357,6 +3371,7 @@ class GeminiLiveProvider(RealtimeProvider):
             + CALENDAR_INSTRUCTIONS
             + CMS_INSTRUCTIONS
             + DEVIN_INSTRUCTIONS
+            + OPENCODE_INSTRUCTIONS
             + DOC_INSTRUCTIONS
             + DRIVE_INSTRUCTIONS
             + HABIT_INSTRUCTIONS

@@ -1,0 +1,24 @@
+# Ada remains the responder; OpenCode is only reached through an explicit
+# card-bound preflight and confirmation boundary.
+name: ada_opencode_control
+tier: smoke
+turns:
+  - user: "Ada, preflight the OpenCode work for card ADA-1010 without dispatching it."
+    expect:
+      calls: [ada_opencode]
+      response_nonempty: true
+      timeout_s: 45
+      settle_s: 5
+  - user: "Ada, how much did that OpenCode preflight spend?"
+    expect:
+      calls_not: [ada_opencode_dispatch]
+      response_nonempty: true
+      timeout_s: 30
+      settle_s: 4
+  - user: "Ada, dispatch the approved OpenCode job for card ada-opencode-nonexistent."
+    expect:
+      calls: [ada_opencode_dispatch]
+      result_contains: ["card not found"]
+      response_nonempty: true
+      timeout_s: 30
+      settle_s: 4
