@@ -1,0 +1,11 @@
+# devnest_news — explicit approval is required before a public Wiki write.
+name: devnest_news
+tier: full
+turns:
+  - user: >-
+      Publish a verified public DevNest News post titled "DevNest News path
+      is live" using the exact source and hierarchy details I provide.
+    expect:
+      calls_any: [devnest_news]
+      timeout_s: 60
+      settle_s: 10

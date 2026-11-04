@@ -89,6 +89,11 @@ tools:
     policy: read
     secondary_allowed: true
     timeout_s: 60
+  devnest_news:
+    module: devnest_news
+    policy: confirmed
+    secondary_allowed: false
+    timeout_s: 60
   weather_station:
     module: weather_station
     policy: read
