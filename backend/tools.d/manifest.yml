@@ -1,4 +1,9 @@
 tools:
+  gs_capture_eval:
+    module: gs_capture_eval
+    policy: read
+    secondary_allowed: true
+    timeout_s: 60
   kanban:
     module: kanban
     policy: read

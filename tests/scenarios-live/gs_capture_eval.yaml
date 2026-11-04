@@ -1,0 +1,15 @@
+# Read-only Ada smoke scenario. The fixture root is supplied by the staging
+# environment; no training, publication, or external notification is allowed.
+name: gs-capture-eval
+tier: smoke
+turns:
+  - user: >-
+      Evaluate the Hibiscus image set for Gaussian Splat readiness. Use the
+      read-only image evaluator. Report image count, dimensions, duplicate
+      groups, sharpness floor, median sharpness, and recommendation. Do not
+      train, modify images, publish, or send notifications.
+    expect:
+      calls_any: [gs_capture_eval]
+      response_nonempty: true
+      response_contains_any: ["14", "sharpness", "baseline", "mask"]
+      timeout_s: 90
