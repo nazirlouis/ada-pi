@@ -104,6 +104,7 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
         "title": _text(args, "title"),
         "body": _text(args, "body"),
         "source": "ada",
+        "from": "ada",
         "confidence": "verified",
         "visibility": _VISIBILITY,
         "evidence": [_text(args, "source_url")],
