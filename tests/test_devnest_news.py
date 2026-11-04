@@ -23,6 +23,7 @@ def _args(**overrides):
     args = {
         "title": "DevNest News path is live",
         "body": "The verified publication path now reaches MediaWiki.",
+        "summary": "Verified DevNest to MediaWiki publishing.",
         "source_url": "https://wiki.h3.gizmo-thailand.com/",
         "source_published_at": "2026-11-04 00:00 UTC",
         "wiki_title": "News/Desks/DevNest/Projects/MediaWiki-Adapter",

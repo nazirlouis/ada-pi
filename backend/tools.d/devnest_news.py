@@ -27,6 +27,10 @@ DECLARATION = {
         "properties": {
             "title": {"type": "string", "description": "Article title."},
             "body": {"type": "string", "description": "Article body."},
+            "summary": {
+                "type": "string",
+                "description": "One factual quick-glance sentence, <=80 chars.",
+            },
             "source_url": {
                 "type": "string",
                 "description": "Primary evidence/source URL.",
@@ -62,7 +66,7 @@ DECLARATION = {
             "region": {"type": "string"},
         },
         "required": [
-            "title", "body", "source_url", "source_published_at",
+            "title", "body", "summary", "source_url", "source_published_at",
             "wiki_title", "desk", "geo_scope", "topic", "parent",
         ],
     },
@@ -79,11 +83,14 @@ def _validate(args: dict[str, Any]) -> str | None:
         if not _text(args, key):
             return f"{key} is required"
     wiki_title = _text(args, "wiki_title")
+    summary = _text(args, "summary")
     parent = _text(args, "parent")
     if not wiki_title.startswith("News/"):
         return "wiki_title must start with News/"
     if "\n" in wiki_title or "\r" in wiki_title:
         return "wiki_title must be one line"
+    if len(summary) > 80:
+        return "summary must be <=80 characters"
     if not parent.startswith("News/"):
         return "parent must start with News/"
     scope = _text(args, "geo_scope").lower()
@@ -103,6 +110,7 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
         "kind": "news",
         "title": _text(args, "title"),
         "body": _text(args, "body"),
+        "summary": _text(args, "summary"),
         "source": "ada",
         "from": "ada",
         "confidence": "verified",
@@ -112,6 +120,7 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
         "meta": {
             "wiki_title": _text(args, "wiki_title"),
             "status": "published",
+            "summary": _text(args, "summary"),
             "desk": _text(args, "desk"),
             "geo_scope": _text(args, "geo_scope").lower(),
             "topic": _text(args, "topic"),
