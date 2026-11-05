@@ -8,7 +8,7 @@ from backend import board_client
 
 _ALLOWED = {
     "CategoryTree", "Mermaid", "MsUpload", "MultimediaViewer",
-    "Cargo", "PageForms",
+    "Cargo", "PageForms", "Lockdown",
 }
 _ACTIONS = {"list", "install", "enable", "disable"}
 
