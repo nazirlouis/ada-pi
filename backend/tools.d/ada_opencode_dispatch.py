@@ -32,8 +32,11 @@ DECLARATION = {
             "max_tokens": {"type": "integer"},
             "max_wall_time_s": {"type": "integer"},
             "max_retries": {"type": "integer"},
+            "approval_receipt": {"type": "string"},
+            "approval_issued_at": {"type": "integer"},
+            "approval_expires_at": {"type": "integer"},
         },
-        "required": ["card_reference", "task"],
+        "required": ["card_reference", "task", "approval_receipt", "approval_issued_at", "approval_expires_at"],
     },
 }
 
@@ -49,6 +52,11 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
     if err or card_data is None:
         return {"ok": False, "error": err or "card not found"}
     gate = preflight(card_data, args)
+    now = int(__import__("time").time())
+    if int(args.get("approval_expires_at") or 0) < now:
+        return {"ok": False, "error": "approval_receipt_expired", "preflight": gate}
+    if args.get("approval_receipt") != gate.get("approval_receipt") or int(args.get("approval_issued_at") or 0) != gate.get("approval_issued_at"):
+        return {"ok": False, "error": "approval_receipt_mismatch", "preflight": gate}
     if not gate["ready_for_dispatch"]:
         return {"ok": False, "error": "preflight_failed", "preflight": gate}
     limits = gate["limits"]
@@ -61,6 +69,7 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
         "profile": limits["profile"],
         "target_host": limits["target_host"],
         "artifact": limits["artifact"],
+        "verifier": limits["verifier"],
         "prompt": task,
         "expect": {
             "required_keys": ["artifact", "tests", "verifier"],

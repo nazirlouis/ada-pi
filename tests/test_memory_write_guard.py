@@ -22,6 +22,12 @@ from tests.scenario_engine import FakeMddb, build_registry
 
 
 class GuardUnitTests(unittest.TestCase):
+    def setUp(self):
+        # These are process-global throttles; isolate tests from memory-write
+        # activity in other test modules and from repeated CI runs.
+        guard._last_doc_warn.clear()
+        guard._last_doc_check.clear()
+
     def test_at_and_under_cap_pass(self):
         cap = guard.entry_cap()
         self.assertIsNone(guard.check_entry("x" * cap))
@@ -69,6 +75,9 @@ class RememberCapTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mddb = FakeMddb()
         self.registry = build_registry("tony")
+        # The guard throttles by module-global bank/collection keys.
+        guard._last_doc_warn.clear()
+        guard._last_doc_check.clear()
 
     async def test_over_cap_text_refused_before_write(self):
         out = await memory_ops.remember(

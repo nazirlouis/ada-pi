@@ -314,7 +314,8 @@ def note_doc_count(bank: str, count: int, source: str = "mddb"
     if thr <= 0 or count < thr:
         return None
     now = time.monotonic()
-    if now - _last_doc_warn.get(bank, 0.0) < DOC_WARN_INTERVAL_S:
+    last_warn = _last_doc_warn.get(bank)
+    if last_warn is not None and now - last_warn < DOC_WARN_INTERVAL_S:
         return {"bank": bank, "doc_count": count, "warn_threshold": thr,
                 "warned": False}
     _last_doc_warn[bank] = now
@@ -337,7 +338,8 @@ async def warn_if_bank_large(mddb: Any, collection: str,
     if thr <= 0:
         return None
     now = time.monotonic()
-    if now - _last_doc_check.get(str(collection), 0.0) < DOC_WARN_INTERVAL_S:
+    last_check = _last_doc_check.get(str(collection))
+    if last_check is not None and now - last_check < DOC_WARN_INTERVAL_S:
         return None
     _last_doc_check[str(collection)] = now
     try:
