@@ -30,7 +30,7 @@ DECLARATION = {
                 "type": "string",
                 "description": "Exact card id or ref, for example ADA-1010.",
             },
-            "task": {"type": "string", "description": "Optional exact bounded task for receipt binding."},
+            "task": {"type": "string", "description": "Exact bounded task; required for preflight approval receipt binding."},
             "repo": {"type": "string", "description": "Declared repository."},
             "model": {"type": "string"},
             "llm_key_alias": {

@@ -762,16 +762,22 @@ DEVIN_INSTRUCTIONS = (
 
 OPENCODE_INSTRUCTIONS = (
     " OpenCode is a bounded executor behind Ada, not the user-facing "
-    "responder. For implementation work, use ada_opencode with action="
-    "'preflight' on the exact card first; require an explicit model, "
-    "LiteLLM key alias, profile, target host, artifact, verifier evidence, "
-    "and max USD/turn/token/wall-time/retry limits. Only after the user "
-    "approves the exact preflight may you call ada_opencode_dispatch. "
-    "Never silently change the executor, model, key, host, profile, or "
-    "limits, and never claim a job ran without a board/artifact receipt. "
-    "Use ada_opencode action='status' or 'receipts' for follow-up. Plain "
-    "questions and status/spend questions stay in Ada and must not start "
-    "OpenCode."
+    "responder. For implementation work, call ada_opencode action='preflight' "
+    "on the exact card before narrating any envelope. NEVER invent default "
+    "limits or claim that preflight ran: the tool result is the only source "
+    "of truth. Pass the exact bounded task to preflight so its approval "
+    "receipt binds the task. Require the returned explicit model, LiteLLM "
+    "key alias, profile, target host, artifact, resolved verifier, and max "
+    "USD/turn/token/wall-time/retry limits. Show those returned values to "
+    "the user. Only after the user approves that exact receipt may you call "
+    "ada_opencode_dispatch, passing the task, all returned limits, "
+    "approval_receipt, approval_issued_at, and approval_expires_at verbatim. "
+    "Do not retry a schema-error dispatch with guessed or default arguments; "
+    "report the rejected fields and stop. Never silently change the executor, "
+    "model, key, host, profile, verifier, artifact, or limits, and never "
+    "claim a job ran without a board/artifact receipt. Use ada_opencode "
+    "action='status' or 'receipts' for follow-up. Plain questions and "
+    "status/spend questions stay in Ada and must not start OpenCode.\n"
 )
 
 # Summary rollup tools — tools-merge-calendar-plan (2026-10-05) folded
