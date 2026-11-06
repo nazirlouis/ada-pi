@@ -94,6 +94,11 @@ tools:
     policy: confirmed
     secondary_allowed: false
     timeout_s: 60
+  devnest_news_review:
+    module: devnest_news_review
+    policy: read
+    secondary_allowed: false
+    timeout_s: 60
   wiki_extension:
     module: wiki_extension
     policy: confirmed
