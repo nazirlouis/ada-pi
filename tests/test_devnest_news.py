@@ -85,3 +85,34 @@ async def test_reports_delivery_failure_honestly():
         result = await tool.run(SimpleNamespace(), **_args())
     assert result["ok"] is False
     assert "not delivered" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_promotion_carries_diagnosis_and_card_receipts():
+    tool = _load()
+    response = {
+        "ok": True,
+        "event_id": "evt-promote",
+        "receipts": {
+            "wiki": {
+                "status": "delivered",
+                "revid": 46,
+            }
+        },
+    }
+    with patch.object(tool.board_client, "post",
+                      new=AsyncMock(return_value=(200, response))) as post:
+        result = await tool.run(
+            SimpleNamespace(),
+            **_args(
+                private_wiki_title="PrivateNews:Countries/Thailand/Test",
+                review_revid=45,
+                diagnosis_id="diag-123",
+                card_ref="devnest-news-promote-test",
+            ),
+        )
+    assert result["ok"] is True
+    event = post.await_args.args[1]
+    assert event["card"] == "devnest-news-promote-test"
+    assert event["meta"]["diagnosis_id"] == "diag-123"
+    assert event["meta"]["review_revid"] == 45

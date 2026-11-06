@@ -64,6 +64,10 @@ DECLARATION = {
             },
             "country": {"type": "string"},
             "region": {"type": "string"},
+            "private_wiki_title": {"type": "string"},
+            "review_revid": {"type": "integer"},
+            "diagnosis_id": {"type": "string"},
+            "card_ref": {"type": "string"},
         },
         "required": [
             "title", "body", "summary", "source_url", "source_published_at",
@@ -93,6 +97,17 @@ def _validate(args: dict[str, Any]) -> str | None:
         return "summary must be <=80 characters"
     if not parent.startswith("News/"):
         return "parent must start with News/"
+    promotion_fields = ("private_wiki_title", "review_revid",
+                        "diagnosis_id", "card_ref")
+    if any(args.get(key) not in (None, "") for key in promotion_fields):
+        if not _text(args, "private_wiki_title").startswith("PrivateNews:"):
+            return "private_wiki_title is required for promotion"
+        if args.get("review_revid") in (None, ""):
+            return "review_revid is required for promotion"
+        if not _text(args, "diagnosis_id"):
+            return "diagnosis_id is required for promotion"
+        if not _text(args, "card_ref"):
+            return "card_ref is required for promotion"
     scope = _text(args, "geo_scope").lower()
     if scope not in _GEO_SCOPES:
         return f"geo_scope must be one of {sorted(_GEO_SCOPES)}"
@@ -133,6 +148,14 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
         value = _text(args, key)
         if value:
             event["meta"][key] = value
+    if args.get("private_wiki_title"):
+        event["card"] = _text(args, "card_ref")
+        event["meta"].update({
+            "promotion": "private-to-public",
+            "private_wiki_title": _text(args, "private_wiki_title"),
+            "review_revid": int(args["review_revid"]),
+            "diagnosis_id": _text(args, "diagnosis_id"),
+        })
 
     status, result = await board_client.post("/publish", event, timeout=45)
     if status <= 0:
