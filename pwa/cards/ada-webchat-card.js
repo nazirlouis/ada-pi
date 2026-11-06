@@ -251,6 +251,7 @@ class AdaWebchatCard extends HTMLElement {
         break;
       case "tool_result":
         this._mediaFrom(ev.result).forEach(u => this._media(u));
+        this._nextMenu(ev.result);
         break;
       case "chat_push":
         // Outbound push (chat_send channel=web) — a parked or live
@@ -417,6 +418,41 @@ class AdaWebchatCard extends HTMLElement {
     this._scroll();
   }
 
+  _nextMenu(result) {
+    if (!result || !Array.isArray(result.next_menu)
+        || !result.next_menu.length) return;
+    const row = document.createElement("div");
+    row.className = "next-menu";
+    const title = document.createElement("div");
+    title.className = "next-menu-title";
+    title.textContent = "Choose the next step";
+    row.append(title);
+    const buttons = document.createElement("div");
+    buttons.className = "next-menu-buttons";
+    for (const option of result.next_menu.slice(0, 8)) {
+      if (!option || !option.id || !option.label) continue;
+      const button = document.createElement("button");
+      button.className = "next-choice";
+      button.type = "button";
+      button.textContent = option.label;
+      button.addEventListener("click", () => {
+        if (!this._ws || button.disabled) return;
+        [...buttons.querySelectorAll("button")].forEach(b => {
+          b.disabled = true;
+        });
+        const choice = `next choice ${option.id}`;
+        this._ws.send(JSON.stringify({ type: "text", text: choice }));
+        this._bubble("mine", choice);
+      });
+      buttons.append(button);
+    }
+    if (buttons.children.length) {
+      row.append(buttons);
+      this._log().append(row);
+      this._scroll();
+    }
+  }
+
   _status(t) {
     this.shadowRoot.getElementById("wc-status").textContent = t;
   }
@@ -468,6 +504,17 @@ class AdaWebchatCard extends HTMLElement {
                font-size: 12px; text-align: center; }
         .sys.err { color: #b03030; }
         .sys.chan { opacity: .7; font-style: italic; }
+        .next-menu { align-self: flex-start; max-width: 90%; padding: 10px;
+                      background: #eef4f8; border: 1px solid #c4d5e2;
+                      border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+        .next-menu-title { margin-bottom: 7px; color: #2c3e50;
+                           font-weight: 700; font-size: 13px; }
+        .next-menu-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+        .next-choice { border: 1px solid #4a90d9; border-radius: 16px;
+                       padding: 7px 11px; background: #fff; color: #24527a;
+                       cursor: pointer; font: 600 13px system-ui, sans-serif; }
+        .next-choice:hover { background: #e6f1fb; }
+        .next-choice:disabled { opacity: .55; cursor: default; }
         #wc-typing { color: #4a6076; font-size: 12px; font-style: italic;
                      padding: 2px 14px 6px; min-height: 16px; }
         .composer { display: flex; gap: 8px; padding: 10px;

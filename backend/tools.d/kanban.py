@@ -37,6 +37,8 @@ Authority matrix (design §3):
 from __future__ import annotations
 
 import re
+import secrets
+import time
 from typing import Any
 
 import httpx
@@ -480,6 +482,8 @@ def _next_rank(cards: list[dict[str, Any]]) -> dict[str, Any]:
     menu.append({"id": "stop", "label": "Stop", "operation": "stop"})
     return {
         "ok": True, "operation": "next",
+        "question_id": "next-" + secrets.token_urlsafe(9),
+        "expires_at": time.time() + 900,
         "current_work": active[:3], "review_ready": review[:3],
         "safe_candidates": backlog[:3], "blockers": blockers[:8],
         "next_menu": menu, "mutations_performed": [],

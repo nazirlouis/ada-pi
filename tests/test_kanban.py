@@ -876,6 +876,8 @@ class NextMenuTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["review_ready"][0]["id"], "review-1")
         self.assertEqual(out["safe_candidates"][0]["id"], "backlog-1")
         self.assertIn("Stop", [x["label"] for x in out["next_menu"]])
+        self.assertTrue(out["question_id"].startswith("next-"))
+        self.assertGreater(out["expires_at"], 0)
         self.assertEqual(client.posts("/action"), [])
 
     async def test_next_board_failure_is_honest(self):

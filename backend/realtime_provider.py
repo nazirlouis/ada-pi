@@ -6102,10 +6102,23 @@ class GeminiLiveProvider(RealtimeProvider):
                             dur_ms=int((time.monotonic() - tool_t0) * 1000),
                             ok=bool(result.get("ok", True)),
                             result_hash=result_hash)
+                        _ws_result = (_safe_args(result)
+                                      if isinstance(result, dict)
+                                      else {"value": str(result)[:500]})
+                        # The webchat needs the bounded next-menu structure
+                        # to render clickable choices; keep all other tool
+                        # results on the small trace-safe stump.
+                        if (isinstance(result, dict)
+                                and result.get("operation") == "next"
+                                and isinstance(result.get("next_menu"), list)):
+                            _ws_result["question_id"] = result.get("question_id")
+                            _ws_result["expires_at"] = result.get("expires_at")
+                            _ws_result["next_menu"] = _json_safe(
+                                result.get("next_menu"))
                         yield ProviderEvent("tool_result", {
                             "id": str(call.id or ""),
                             "name": str(call.name),
-                            "result": _safe_args(result) if isinstance(result, dict) else {"value": str(result)[:500]},
+                            "result": _ws_result,
                             "result_hash": result_hash,
                         })
                         if self._trace_full:
