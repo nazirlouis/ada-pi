@@ -51,8 +51,9 @@ _HTTP_TIMEOUT = 75.0
 DECLARATION = {
     "name": "kanban",
     "description": (
-        "Kanban board — action='list'|'read'|'comment'|'move'|'ask'|"
-        "'file'|'respond'. Moves need the right authority: free within "
+        "Kanban board — action='next'|'list'|'read'|'comment'|'move'|'ask'|"
+        "'file'|'respond'. `next` inspects current work and returns "
+        "read-only choices; it never queues or dispatches. Moves need the right authority: free within "
         "triage, evidence= to close review cards, Tony's confirm beyond."
     ),
     "parameters": {
@@ -449,6 +450,51 @@ async def _list(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _next_rank(cards: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a read-only next-step menu from current board truth."""
+    active, review, backlog = [], [], []
+    blockers = []
+    for card in cards:
+        col = str(card.get("column") or "backlog")
+        compact = _compact_card(card)
+        open_reqs = compact.get("open_requests", 0)
+        if open_reqs:
+            blockers.append(compact)
+        if col == "doing":
+            active.append(compact)
+        elif col == "review":
+            review.append(compact)
+        elif col == "backlog" and not open_reqs:
+            backlog.append(compact)
+    key = lambda c: (str(c.get("updated") or ""), str(c.get("id") or ""))
+    active.sort(key=key, reverse=True)
+    review.sort(key=key, reverse=True)
+    backlog.sort(key=lambda c: (str(c.get("priority") or "medium") != "high", -len(str(c.get("title") or "")), str(c.get("updated") or "")))
+    menu = []
+    for c in active[:3]:
+        menu.append({"id": f"continue:{c['id']}", "label": f"Continue: {c['title']}", "card_id": c["id"], "operation": "plan"})
+    for c in review[:3]:
+        menu.append({"id": f"review:{c['id']}", "label": f"Review: {c['title']}", "card_id": c["id"], "operation": "review"})
+    for c in backlog[:3]:
+        menu.append({"id": f"plan:{c['id']}", "label": f"Plan: {c['title']}", "card_id": c["id"], "operation": "plan"})
+    menu.append({"id": "stop", "label": "Stop", "operation": "stop"})
+    return {
+        "ok": True, "operation": "next",
+        "current_work": active[:3], "review_ready": review[:3],
+        "safe_candidates": backlog[:3], "blockers": blockers[:8],
+        "next_menu": menu, "mutations_performed": [],
+        "next_safe_action": "present the menu and wait for Tony's choice; do not queue or dispatch",
+    }
+
+
+async def _next(ctx: Any) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        data, err = await _request(client, "GET", "/cards", ctx=ctx)
+    if err:
+        return {"ok": False, "operation": "next", "error": err}
+    return _next_rank(_cards_only((data or {}).get("cards")))
+
+
 async def _read(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     cid = _card_id(args)
     if not cid:
@@ -822,6 +868,8 @@ async def run(runner: Any, confirmed: Any = None,
         return {"ok": False,
                 "error": "board writes are the session owner's — ask "
                          "them to make the change in their own voice"}
+    if action == "next":
+        return await _next(ctx)
     if action == "list":
         return await _list(ctx, args)
     if action == "read":
@@ -837,5 +885,5 @@ async def run(runner: Any, confirmed: Any = None,
     if action == "respond":
         return await _respond(runner, args)
     return {"ok": False,
-            "error": f"unknown action {action!r} — use list, read, "
+            "error": f"unknown action {action!r} — use next, list, read, "
                      "comment, move, ask, file, or respond"}

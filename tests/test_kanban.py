@@ -853,3 +853,34 @@ class StaleGuardTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(out["ok"])
         self.assertTrue(out["stale"])
         self.assertEqual(client.posts("/respond"), [])
+
+class NextMenuTest(unittest.IsolatedAsyncioTestCase):
+    async def test_next_checks_current_work_and_returns_choices_without_writes(self):
+        payload = {
+            "cards": [
+                {"id": "doing-1", "title": "Current task", "column": "doing",
+                 "updated": "2026-11-06 10:00"},
+                {"id": "review-1", "title": "Review task", "column": "review",
+                 "updated": "2026-11-06 09:00"},
+                {"id": "backlog-1", "title": "Safe next task", "column": "backlog",
+                 "priority": "high", "updated": "2026-11-06 08:00"},
+                {"id": "blocked-1", "title": "Needs decision", "column": "backlog",
+                 "requests": [{"id": "r1", "status": "open"}]},
+            ]
+        }
+        client = FakeClient({"/cards": FakeResp(200, payload)})
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next")
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["current_work"][0]["id"], "doing-1")
+        self.assertEqual(out["review_ready"][0]["id"], "review-1")
+        self.assertEqual(out["safe_candidates"][0]["id"], "backlog-1")
+        self.assertIn("Stop", [x["label"] for x in out["next_menu"]])
+        self.assertEqual(client.posts("/action"), [])
+
+    async def test_next_board_failure_is_honest(self):
+        client = FakeClient(fail=httpx.ConnectError("refused"))
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next")
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["operation"], "next")

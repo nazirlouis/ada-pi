@@ -238,6 +238,7 @@ CMS_INSTRUCTIONS = (
     "moment. If the read reports several open cards it picked the most "
     "recently updated — say which card got the comment; if no card links "
     "the report, answer aloud and offer to file one (action='file')."
+    " NEXT — when the user says 'next' without a specific card, call kanban action='next' first. Do not answer with a raw card list. The result checks current doing/review/backlog work, blockers, and safe candidates, then presents the returned next_menu choices. Wait for Tony's choice; choosing a menu item selects the next plan/review step only and never queues or dispatches a job automatically. "
     " KANBAN — you review and triage the board with the kanban tool: "
     "list/read/comment/file are always fine; 'move' is yours for "
     "backlog→doing, doing→backlog, and doing→review only; closing a "
