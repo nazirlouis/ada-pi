@@ -886,3 +886,109 @@ class NextMenuTest(unittest.IsolatedAsyncioTestCase):
             out = await board.run(_runner(), action="next")
         self.assertFalse(out["ok"])
         self.assertEqual(out["operation"], "next")
+
+
+class NextChoiceTest(unittest.IsolatedAsyncioTestCase):
+    """action=next_choice resolves a menu pick against FRESH board state:
+    valid ids return the card + read-only step; stale/unknown ids are
+    refused with a fresh menu; nothing is ever written."""
+
+    CARDS = [
+        {"id": "doing-1", "title": "Current task", "column": "doing",
+         "updated": "2026-11-06 10:00",
+         "action": {"type": "devin", "status": "running"}},
+        {"id": "review-1", "title": "Review task", "column": "review",
+         "updated": "2026-11-06 09:00"},
+        {"id": "backlog-1", "title": "Safe next task", "column": "backlog",
+         "priority": "high", "updated": "2026-11-06 08:00"},
+    ]
+
+    def _client(self, cards=None):
+        payload = {"cards": list(self.CARDS if cards is None else cards)}
+        return FakeClient({"/cards": FakeResp(200, payload)})
+
+    async def test_plan_choice_returns_full_card_and_guidance(self):
+        client = self._client()
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next_choice",
+                                  choice="plan:backlog-1")
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["operation"], "next_choice")
+        self.assertEqual(out["menu_operation"], "plan")
+        self.assertEqual(out["card"]["id"], "backlog-1")
+        self.assertIn("do not queue", out["next_safe_action"])
+        self.assertEqual(client.posts("/action"), [])
+        self.assertEqual(client.posts("/comment"), [])
+
+    async def test_continue_and_review_choices_resolve(self):
+        client = self._client()
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            cont = await board.run(_runner(), action="next_choice",
+                                   choice="continue:doing-1")
+            rev = await board.run(_runner(), action="next_choice",
+                                  choice="review:review-1")
+        self.assertTrue(cont["ok"], cont)
+        self.assertEqual(cont["card"]["column"], "doing")
+        self.assertIn("doing", cont["next_safe_action"])
+        self.assertTrue(rev["ok"], rev)
+        self.assertEqual(rev["card"]["column"], "review")
+        self.assertIn("review", rev["next_safe_action"])
+
+    async def test_stop_choice_needs_no_card(self):
+        client = self._client()
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next_choice",
+                                  choice="stop")
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["menu_operation"], "stop")
+        self.assertIn("stop", out["next_safe_action"])
+        self.assertNotIn("card", out)
+
+    async def test_unknown_choice_is_refused_with_fresh_menu(self):
+        client = self._client()
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next_choice",
+                                  choice="plan:no-such-card")
+        self.assertFalse(out["ok"])
+        self.assertTrue(out["stale"])
+        self.assertEqual(out["choice"], "plan:no-such-card")
+        self.assertTrue(out["next_menu"])
+        self.assertTrue(out["question_id"].startswith("next-"))
+
+    async def test_moved_card_drops_out_as_stale(self):
+        # backlog-1 was in the old menu but has since moved to done —
+        # the fresh ranking no longer offers plan:backlog-1.
+        cards = [dict(c) for c in self.CARDS]
+        cards[2]["column"] = "done"
+        client = self._client(cards)
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next_choice",
+                                  choice="plan:backlog-1")
+        self.assertFalse(out["ok"])
+        self.assertTrue(out["stale"])
+
+    async def test_blocked_card_is_not_a_valid_plan_pick(self):
+        # A backlog card with an open request never enters the menu.
+        cards = [dict(c) for c in self.CARDS]
+        cards[2]["requests"] = [{"id": "r1", "status": "open"}]
+        client = self._client(cards)
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next_choice",
+                                  choice="plan:backlog-1")
+        self.assertFalse(out["ok"])
+        self.assertTrue(out["stale"])
+
+    async def test_missing_choice_is_an_honest_error(self):
+        client = self._client()
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next_choice")
+        self.assertFalse(out["ok"])
+        self.assertIn("choice", out["error"])
+
+    async def test_board_failure_is_honest(self):
+        client = FakeClient(fail=httpx.ConnectError("refused"))
+        with patch.object(board.httpx, "AsyncClient", return_value=client):
+            out = await board.run(_runner(), action="next_choice",
+                                  choice="stop")
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["operation"], "next_choice")

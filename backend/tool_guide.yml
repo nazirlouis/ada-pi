@@ -531,7 +531,14 @@ kanban: >-
   Board tool (absorbs ada_board_write). Read the 'kanban-brief' page's
   board-index block first — one row per open card, cheapest read — and
   use 'list'/'read' only for what the index doesn't carry.
-  'list' compact board state
+  'next' (user says 'next' with no card) checks doing/review/backlog
+  work, blockers, and safe candidates, then returns a next_menu of
+  read-only choices (continue:/review:/plan:/stop) with question_id +
+  expires_at — present it and wait; it never queues or dispatches.
+  'next_choice' (choice=<option id>) resolves a pick against FRESH board
+  state: returns the full card + next_safe_action (read-only plan /
+  review / status step); stale picks come back ok=false + a fresh
+  next_menu — re-present it. 'list' compact board state
   (column=, limit= filters) for finding card ids and open requests;
   'read' one card full detail (id=) or the report-linked card
   (report=<slug>). 'comment' posts text= on id= (prefix '[opinion]' for

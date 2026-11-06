@@ -238,7 +238,7 @@ CMS_INSTRUCTIONS = (
     "moment. If the read reports several open cards it picked the most "
     "recently updated — say which card got the comment; if no card links "
     "the report, answer aloud and offer to file one (action='file')."
-    " NEXT — when the user says 'next' without a specific card, call kanban action='next' first. Do not answer with a raw card list. The result checks current doing/review/backlog work, blockers, and safe candidates, then presents the returned next_menu choices. Wait for Tony's choice; choosing a menu item selects the next plan/review step only and never queues or dispatches a job automatically. "
+    " NEXT — when the user says 'next' without a specific card, call kanban action='next' first. Do not answer with a raw card list. The result checks current doing/review/backlog work, blockers, and safe candidates, then presents the returned next_menu choices. Wait for Tony's choice; choosing a menu item selects the next plan/review step only and never queues or dispatches a job automatically. When Tony picks an option — a webchat button sends 'next choice <id>' or he says it aloud — call kanban action='next_choice' with choice=<id>. The tool re-validates the pick against fresh board state and returns the resolved card plus the read-only step to perform; follow its next_safe_action. If it reports stale, present the fresh next_menu it returns and ask him to pick again. "
     " KANBAN — you review and triage the board with the kanban tool: "
     "list/read/comment/file are always fine; 'move' is yours for "
     "backlog→doing, doing→backlog, and doing→review only; closing a "
@@ -6109,7 +6109,8 @@ class GeminiLiveProvider(RealtimeProvider):
                         # to render clickable choices; keep all other tool
                         # results on the small trace-safe stump.
                         if (isinstance(result, dict)
-                                and result.get("operation") == "next"
+                                and result.get("operation")
+                                in ("next", "next_choice")
                                 and isinstance(result.get("next_menu"), list)):
                             _ws_result["question_id"] = result.get("question_id")
                             _ws_result["expires_at"] = result.get("expires_at")

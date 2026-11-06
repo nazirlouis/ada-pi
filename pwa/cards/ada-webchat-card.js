@@ -450,6 +450,16 @@ class AdaWebchatCard extends HTMLElement {
       row.append(buttons);
       this._log().append(row);
       this._scroll();
+      // Menu options expire (kanban next sets expires_at, unix seconds)
+      // — disable the buttons rather than let a stale pick reach Ada.
+      const expMs = Number(result.expires_at) * 1000;
+      if (expMs > 0) {
+        setTimeout(() => {
+          [...buttons.querySelectorAll("button")].forEach(b => {
+            b.disabled = true;
+          });
+        }, Math.max(0, expMs - Date.now()));
+      }
     }
   }
 
