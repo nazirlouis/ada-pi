@@ -3,6 +3,14 @@ name: devnest_news
 tier: full
 turns:
   - user: >-
+      Diagnose promotion readiness for
+      PrivateNews:Countries/Thailand/Test to
+      News/Countries/Thailand/Test without publishing.
+    expect:
+      calls_any: [devnest_news_diagnose]
+      timeout_s: 60
+      settle_s: 10
+  - user: >-
       Review the protected PrivateNews page
       "PrivateNews:Countries/Thailand/Test" before any promotion.
     expect:
