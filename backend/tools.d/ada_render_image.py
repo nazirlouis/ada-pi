@@ -169,6 +169,13 @@ DECLARATION = {
 }
 
 _DEFAULT_MODEL = "gemini-3.1-flash-image"
+# LiteLLM's image alias can return HTTP 200 with an empty candidates list
+# when the primary upstream has no usable image response. Try the explicit
+# paid-lite and OpenRouter image aliases before reporting failure.
+_IMAGE_FALLBACK_MODELS = (
+    "gemini-3.1-flash-lite-image",
+    "or-gemini-3.1-flash-image",
+)
 _DEFAULT_DIR = "~/.local/share/ada/renders"
 _PROMPT_MAX = 2000
 _REF_MAX_BYTES = 15 * 1024 * 1024
@@ -406,7 +413,7 @@ def _gen_config(ratio: str, size: str) -> Any:
 
 
 async def _render(prompt: str, refs: list[tuple[bytes, str]],
-                  ratio: str, size: str
+                  ratio: str, size: str, model: str | None = None
                   ) -> tuple[bytes | None, str | None, str | None]:
     """-> (image bytes, model text, None) or (None, None, error)."""
     parts: list[dict[str, Any]] = [{"text": prompt}]
@@ -416,7 +423,7 @@ async def _render(prompt: str, refs: list[tuple[bytes, str]],
     contents = [{"role": "user", "parts": parts}]
     from backend import gemini_pool
     resp = await gemini_pool.generate(
-        _model(), contents, config=_gen_config(ratio, size),
+        model or _model(), contents, config=_gen_config(ratio, size),
         tool="render_image")
     text_bits: list[str] = []
     for cand in getattr(resp, "candidates", None) or []:
@@ -474,18 +481,41 @@ def _transient(exc: BaseException) -> bool:
 async def _render_retry(prompt: str, refs: list[tuple[bytes, str]],
                         ratio: str, size: str
                         ) -> tuple[bytes | None, str | None, str | None]:
-    """_render with one automatic retry on transient failures."""
-    for attempt in range(2):
-        try:
-            return await _render(prompt, refs, ratio, size)
-        except Exception as exc:
-            if attempt == 0 and _transient(exc):
-                logger.info("image render transient (%s) — one retry",
-                            exc)
-                await asyncio.sleep(_env_float("ADA_RENDER_RETRY_S", 2.0))
-                continue
-            return None, None, f"the image model call failed: {exc}"
-    return None, None, "the image model call failed"  # unreachable
+    """Render with a bounded retry and explicit image-model fallbacks."""
+    models = [_model()] + [
+        model for model in _IMAGE_FALLBACK_MODELS if model != _model()
+    ]
+    last_error = "the image model returned no usable image"
+    last_text: str | None = None
+    for model in models:
+        for attempt in range(2):
+            try:
+                data, text, error = await _render(
+                    prompt, refs, ratio, size, model=model)
+                if data:
+                    return data, text, None
+                last_text = text or last_text
+                last_error = error or last_error
+                if attempt == 0 and not error:
+                    continue
+                break
+            except Exception as exc:
+                last_error = f"the image model call failed: {exc}"
+                if attempt == 0 and _transient(exc):
+                    logger.info(
+                        "image render transient on %s (%s) — one retry",
+                        model, exc)
+                    await asyncio.sleep(
+                        _env_float("ADA_RENDER_RETRY_S", 2.0))
+                    continue
+                if not _transient(exc):
+                    return None, None, last_error
+                break
+        if model != models[-1]:
+            logger.info(
+                "image model %s returned no usable image; trying fallback",
+                model)
+    return None, last_text, last_error
 
 
 def _check_model() -> str:

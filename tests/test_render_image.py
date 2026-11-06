@@ -138,6 +138,25 @@ class TestAdaRenderImage(unittest.TestCase):
         self.assertFalse(out["ok"])
         self.assertIn("no image", out["error"])
 
+    def test_no_image_response_tries_explicit_image_fallbacks(self):
+        import backend.gemini_pool as gp
+        resp = MagicMock()
+        resp.candidates = []
+        resp.prompt_feedback = None
+        with patch.object(gp, "generate", new_callable=AsyncMock,
+                          return_value=resp) as gen, \
+             patch.object(gp, "configured_keys", return_value=["k1"]):
+            out = self._run(prompt="fallback smoke")
+        self.assertFalse(out["ok"])
+        self.assertEqual(
+            [call.args[0] for call in gen.await_args_list],
+            [
+                "gemini-3.1-flash-image",
+                "gemini-3.1-flash-lite-image",
+                "or-gemini-3.1-flash-image",
+            ],
+        )
+
     def test_size_param_reaches_image_config(self):
         with tempfile.TemporaryDirectory() as td, \
              patch("backend.traffic_camera.publish_relay",
