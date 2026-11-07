@@ -773,3 +773,17 @@ weather_station: >-
   rain + raining flag. Check stale/age_min BEFORE quoting numbers — if
   stale, narrate the age ('station data is N min old, upload may be
   down'), never present old readings as current.
+
+ada_lesson: >-
+  Education lesson upsert by topic slug — re-filing the same topic
+  updates in place, Thai translation is automatic server-side. Requires
+  topic= + content= (concise HTML, <h2>/<ul>/<code> allowed, <=12k chars);
+  level= is optional intro|working|deep. On ok:false mentioning
+  credentials, the board-api lesson path isn't configured — don't retry.
+
+ada_sweep: >-
+  Batch preflight + queue of executor-tagged backlog cards under ONE
+  confirmation ('sweep my opencode cards'). executor= (default opencode),
+  column= (default backlog), dry_run=true reports gaps without queueing,
+  limit= caps at 20. Cards missing executor envelope fields come back as
+  per-card gaps — read them aloud, don't retry the whole sweep.
