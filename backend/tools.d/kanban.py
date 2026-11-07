@@ -26,6 +26,12 @@ Authority matrix (design §3):
               review->done, lab moves, over-cap doing claims) — Tony
               decides: the runner confirm gate (confirmed=true after he
               says yes aloud) or action='ask' for an async board request.
+  queue       T3 (unlocked 2026-11-07 — card-judgment bench, 3 consecutive
+              passes vs real topology): arm a card's dispatch rails via
+              board-api /action do=queue. Free on ordinary cards;
+              priority:high, review_kind:decide, and prod/security-tagged
+              cards queue only behind Tony's explicit yes (same confirm
+              gate as gated moves). She proposes; the rails execute.
   respond     owner-only — /respond closes a request and the board logs
               it under 'tony'; only full-access identities may speak a
               request closed.
@@ -54,7 +60,7 @@ DECLARATION = {
     "name": "kanban",
     "description": (
         "Kanban board — action='next'|'next_choice'|'list'|'read'|"
-        "'comment'|'move'|'ask'|'file'|'respond'. next/next_choice are "
+        "'comment'|'move'|'queue'|'ask'|'file'|'respond'. next/next_choice are "
         "read-only menus; moves need triage authority or Tony's confirm."
     ),
     "parameters": {
@@ -65,7 +71,9 @@ DECLARATION = {
                 "description": "'list' (default read of the board), "
                                "'read' (one card, id= or report=), "
                                "'next_choice' (resolve a next_menu pick), "
-                               "'comment', 'move', 'ask', 'file' "
+                               "'comment', 'move', 'queue' (arm a card's "
+                               "dispatch rails — T3; gated cards need "
+                               "Tony's yes), 'ask', 'file' "
                                "('create' accepted), 'respond'.",
             },
             "choice": {
@@ -496,7 +504,7 @@ def _next_rank(cards: list[dict[str, Any]]) -> dict[str, Any]:
         "current_work": active[:3], "review_ready": review[:3],
         "safe_candidates": backlog[:3], "blockers": blockers[:8],
         "next_menu": menu, "mutations_performed": [],
-        "next_safe_action": "present the menu and wait for Tony's choice; do not queue or dispatch",
+        "next_safe_action": "present the menu and wait for Tony's choice; queueing is a separate action='queue' call (gated cards need his yes)",
     }
 
 
@@ -899,6 +907,75 @@ async def _move(runner: Any, args: dict[str, Any],
         return out
 
 
+async def _queue(runner: Any, args: dict[str, Any],
+                 confirmed: Any, confirm_token: Any) -> dict[str, Any]:
+    """action=queue id=<card> — arm the card's dispatch rails (T3).
+
+    Free on ordinary cards; priority:high, review_kind:decide, and
+    prod/security-tagged cards queue only behind Tony's explicit yes —
+    the same confirm gate as gated moves. She proposes; the normal
+    rails (dispatch claim / card autonomy contract) execute."""
+    ctx = getattr(runner, "context", None)
+    cid = _card_id(args)
+    if not cid:
+        return {"ok": False, "error": "a valid card id is required"}
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        data, err = await _request(client, "GET", "/cards", ctx=ctx)
+        if err:
+            return {"ok": False, "error": err}
+        assert data is not None
+        payload, cards = data, _cards_only(data.get("cards"))
+        card = _resolve_in(cards, cid)
+        if card is None:
+            return {"ok": False,
+                    "error": f"no card {cid!r} on the board — check the "
+                             "id with action='list'"}
+        cid = str(card["id"])
+        stale = await _stale_check(client, args, cid, card=card, ctx=ctx)
+        if stale:
+            return stale
+        gated: list[str] = []
+        if str(card.get("priority") or "").lower() == "high":
+            gated.append("priority:high")
+        if str(card.get("review_kind") or "").lower() == "decide":
+            gated.append("review_kind:decide")
+        if any(_PRODSEC_TAG.search(str(t))
+               for t in (card.get("tags") or [])):
+            gated.append("prod/security tag")
+        if gated:
+            reason = ("queueing this card is Tony's call — it is marked "
+                      + ", ".join(gated))
+            try:
+                runner._require_confirmation(
+                    "kanban",
+                    {"action": "queue", "id": cid},
+                    confirmed, confirm_token,
+                    f"NOT EXECUTED — kanban queue {cid}: {reason}. Get "
+                    "Tony's explicit yes; or leave him a board question "
+                    "with action='ask'.")
+            except PermissionError as exc:
+                return {"ok": False, "needs_confirm": True,
+                        "error": str(exc)}
+            audit_suffix = " (Tony confirmed)"
+        else:
+            audit_suffix = ""
+        mdata, merr = await _request(
+            client, "POST", "/action",
+            json={"id": cid, "do": "queue"}, ctx=ctx)
+        if merr:
+            return {"ok": False, "error": merr}
+        posted, cerr = await _comment(
+            client, cid, "queued for processing" + audit_suffix, ctx=ctx)
+        out: dict[str, Any] = {
+            "ok": True, "id": cid,
+            "message": (mdata or {}).get("message", "queued"),
+        }
+        if not posted:
+            out["warning"] = ("queued but the audit comment failed: "
+                              f"{cerr} — retry action='comment'")
+        return out
+
+
 async def _respond(runner: Any, args: dict[str, Any]) -> dict[str, Any]:
     ctx = getattr(runner, "context", None)
     if not _is_owner(runner):
@@ -959,6 +1036,8 @@ async def run(runner: Any, confirmed: Any = None,
         return await _do_comment(ctx, args)
     if action == "move":
         return await _move(runner, args, confirmed, confirm_token)
+    if action == "queue":
+        return await _queue(runner, args, confirmed, confirm_token)
     if action == "ask":
         return await _ask(ctx, args)
     if action == "file":
@@ -967,5 +1046,5 @@ async def run(runner: Any, confirmed: Any = None,
         return await _respond(runner, args)
     return {"ok": False,
             "error": f"unknown action {action!r} — use next, "
-                     "next_choice, list, read, comment, move, ask, "
-                     "file, or respond"}
+                     "next_choice, list, read, comment, move, queue, "
+                     "ask, file, or respond"}
