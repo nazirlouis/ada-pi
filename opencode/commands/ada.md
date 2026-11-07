@@ -56,7 +56,9 @@ Interpret the command as one of these safe operations:
   pending requests first (handled like `/ada attention`), then walk the
   `oldest_backlog` list and give each card a one-line triage verdict:
   `verified-done -> propose close`, `needs-Tony -> raise request`,
-  `dispatchable -> propose queue via ada_preflight`, `unclear -> hold`.
+  `dispatchable -> call ada_preflight for the card first; propose
+  ada_card_action queue only when preflight reports ready — otherwise
+  report the missing fields as the verdict`, `unclear -> hold`.
   Verdicts are proposals — queue/hold mutations go through the gated
   ada_card_action tool; close/merge/deploy stay with Devin or Tony. Finish with a compact sweep receipt.
 
