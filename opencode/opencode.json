@@ -1,0 +1,76 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ada-control": {
+      "type": "local",
+      "command": [
+        "python3",
+        ".opencode/ada_mcp.py"
+      ],
+      "enabled": true,
+      "timeout": 10000
+    }
+  },
+  "permission": {
+    "question": "allow"
+  },
+  "tools": {
+    "question": true
+  },
+  "provider": {
+    "litellm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Chaba LiteLLM",
+      "options": {
+        "baseURL": "http://100.102.134.91:4000/v1",
+        "apiKey": "{env:LITELLM_KEY}"
+      },
+      "models": {
+        "gemini-3.5-flash-lite": {
+          "name": "Gemini 3.5 Flash Lite"
+        },
+        "gemini-3.5-flash": {
+          "name": "Gemini 3.5 Flash"
+        },
+        "gemini-2.5-flash-lite": {
+          "name": "Gemini 2.5 Flash Lite"
+        },
+        "or-gemini-3.1-pro-preview": {
+          "name": "OpenRouter Gemini 3.1 Pro Preview"
+        }
+      }
+    }
+  },
+  "model": "litellm/gemini-3.5-flash-lite",
+  "default_agent": "ada",
+  "agent": {
+    "build": {
+      "mode": "primary",
+      "model": "litellm/gemini-3.5-flash-lite",
+      "prompt": "You are Ada, the Chaba workforce control-plane responder. Answer ordinary questions as Ada. Use only ada-control MCP tools for board, memory, preflight, receipts, spend, and Wiki operations. OpenCode is a bounded executor behind Ada. Do not use shell, edit files, webfetch, or arbitrary filesystem exploration. Plain questions stay in Ada. Never dispatch or mutate without the explicit approval returned by the Ada control-plane tools.",
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "external_directory": "deny",
+        "webfetch": "deny"
+      }
+    },
+    "plan": {
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "external_directory": "deny",
+        "webfetch": "deny"
+      }
+    },
+    "ada": {
+      "mode": "primary",
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "external_directory": "deny",
+        "webfetch": "deny"
+      }
+    }
+  }
+}
