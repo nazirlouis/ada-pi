@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 
 from backend import board_client
-from backend.ada_opencode_control import card, preflight
+from backend.ada_opencode_control import approval_receipt, card, preflight
 
 DECLARATION = {
     "name": "ada_opencode_dispatch",
@@ -55,7 +55,9 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
     now = int(__import__("time").time())
     if int(args.get("approval_expires_at") or 0) < now:
         return {"ok": False, "error": "approval_receipt_expired", "preflight": gate}
-    if args.get("approval_receipt") != gate.get("approval_receipt") or int(args.get("approval_issued_at") or 0) != gate.get("approval_issued_at"):
+    issued_claim = int(args.get("approval_issued_at") or 0)
+    expected = approval_receipt(card_data, gate["limits"], task, issued_claim)
+    if issued_claim <= 0 or args.get("approval_receipt") != expected:
         return {"ok": False, "error": "approval_receipt_mismatch", "preflight": gate}
     if not gate["ready_for_dispatch"]:
         return {"ok": False, "error": "preflight_failed", "preflight": gate}

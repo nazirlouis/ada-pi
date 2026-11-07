@@ -124,6 +124,11 @@ tools:
     policy: read
     secondary_allowed: true
     timeout_s: 120
+  ada_lesson:
+    module: ada_lesson
+    policy: confirmed
+    secondary_allowed: false
+    timeout_s: 60
   ada_opencode:
     module: ada_opencode
     policy: read
