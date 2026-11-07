@@ -134,3 +134,8 @@ tools:
     policy: confirmed
     secondary_allowed: false
     timeout_s: 45
+  ada_sweep:
+    module: ada_sweep
+    policy: confirmed
+    secondary_allowed: false
+    timeout_s: 120
