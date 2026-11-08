@@ -97,7 +97,7 @@ async def _status() -> dict[str, Any]:
         "focus_asset": focus, "candidates": candidates,
         "pending_decisions": camp.get("pending_decisions") or [],
         "next_menu": menu,
-        "picker_url": f"{PICKER}/?img=fix3.png",
+        "picker_url": (f"{PICKER}/?img=/img/{focus}" if focus else PICKER),
         "adobe_upload": False,
     }
 
@@ -115,9 +115,11 @@ async def _decide(args: dict[str, Any]) -> dict[str, Any]:
     note = str(args.get("note") or "")[:400]
     if not asset:
         return {"ok": False, "error": "asset required"}
+    if decision == "repair":
+        return await _repair_info()
     if decision not in _DECISIONS:
         return {"ok": False,
-                "error": f"decision must be one of {_DECISIONS}"}
+                "error": f"decision must be one of {_DECISIONS} or 'repair'"}
     async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
         r = await c.post(f"{PICKER}/api/qc-decision",
                          json={"asset": asset, "decision": decision,
