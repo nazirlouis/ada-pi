@@ -510,20 +510,100 @@ def _rank_next_cards(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return (safe or ordered)[:5]
 
 
+_CARD_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by",
+    "can", "could", "did", "do", "does", "for", "from", "had", "has",
+    "have", "how", "i", "if", "in", "into", "is", "it", "its", "me",
+    "my", "no", "not", "of", "on", "or", "our", "please", "should",
+    "the", "their", "them", "then", "there", "these", "they", "this",
+    "to", "too", "up", "us", "was", "we", "were", "what", "when",
+    "where", "which", "who", "why", "will", "with", "would", "you",
+    "your", "about", "after", "again", "all", "also", "any", "because",
+    "before", "being", "between", "both", "each", "few", "get", "got",
+    "just", "like", "more", "most", "now", "off", "one", "only",
+    "other", "out", "over", "own", "same", "some", "such", "than",
+    "that", "card", "cards", "status", "project",
+})
+
+
+def _card_aliases(card: dict[str, Any]) -> set[str]:
+    raw = card.get("aliases") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    return {str(a).strip().lower() for a in raw if str(a).strip()}
+
+
+def _card_text(card: dict[str, Any]) -> str:
+    return " ".join(
+        str(card.get(k) or "")
+        for k in ("id", "ref", "title", "brief", "spec")
+    ).lower()
+
+
+def _reference_tokens(reference: str) -> list[str]:
+    return [
+        t for t in re.findall(r"[a-z0-9]+", reference.lower())
+        if len(t) > 1 and t not in _CARD_STOPWORDS
+    ]
+
+
+def _ambiguity_error(reference: str, matches: list[dict[str, Any]]) -> LookupError:
+    options = "; ".join(
+        f"{c.get('ref') or c.get('id')} ({c.get('title')})"
+        for c in matches[:5]
+    )
+    return LookupError(
+        f"card reference {reference!r} matched {len(matches)} cards: {options}"
+    )
+
+
 def find_card(reference: str) -> dict[str, Any]:
+    """Resolve a card by exact id/ref/alias, title substring, then scored
+    natural-language token overlap. Ambiguous matches list candidates so the
+    caller can retry with an exact ref."""
     needle = reference.strip().lower()
     if not needle:
         raise ValueError("card reference is required")
-    matches = [
-        c for c in _cards()
+    cards = _cards()
+
+    exact = [
+        c for c in cards
         if needle in {str(c.get("id", "")).lower(), str(c.get("ref", "")).lower()}
-        or needle in str(c.get("title", "")).lower()
+        or needle in _card_aliases(c)
     ]
-    if not matches:
-        raise LookupError(f"no board card matched {reference!r}")
-    if len(matches) > 1:
-        raise LookupError(f"card reference {reference!r} matched {len(matches)} cards")
-    return matches[0]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise _ambiguity_error(reference, exact)
+
+    titled = [
+        c for c in cards
+        if needle in str(c.get("title", "")).lower()
+    ]
+    if len(titled) == 1:
+        return titled[0]
+    if len(titled) > 1:
+        raise _ambiguity_error(reference, titled)
+
+    tokens = _reference_tokens(reference)
+    if tokens:
+        scored = []
+        for c in cards:
+            haystack = _card_text(c)
+            hits = sum(
+                1 for t in tokens
+                if re.search(rf"\b{re.escape(t)}\b", haystack)
+            )
+            if hits:
+                scored.append((hits, c))
+        if scored:
+            best = max(hits for hits, _ in scored)
+            tops = [c for hits, c in scored if hits == best]
+            if len(tops) == 1:
+                return tops[0]
+            raise _ambiguity_error(reference, tops)
+
+    raise LookupError(f"no board card matched {reference!r}")
 
 
 def _safe_card(card: dict[str, Any]) -> dict[str, Any]:
