@@ -1470,5 +1470,112 @@ def ada_card_action(card_reference: str, do: str, confirmed: bool = False) -> st
         return json.dumps({"ok": False, "operation": "card_action", "error": str(exc), "mutations": []})
 
 
+ADOBE_PICKER = os.environ.get(
+    "ADA_ADOBE_PICKER", "http://100.68.142.13:8777").rstrip("/")
+_QC_DECISIONS = ("keep", "reject", "revise")
+_ADOBE_CAMPAIGN = "AS-2026-11-05-REMOTE-WORK-001"
+
+
+def _picker_get(path: str, timeout: float = 30) -> Any:
+    req = urllib.request.Request(
+        f"{ADOBE_PICKER}{path}", headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return json.load(response)
+
+
+def _picker_post(path: str, payload: dict[str, Any], timeout: float = 30) -> Any:
+    req = urllib.request.Request(
+        f"{ADOBE_PICKER}{path}",
+        data=json.dumps(payload).encode(),
+        headers={"Accept": "application/json",
+                 "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return json.load(response)
+
+
+@mcp.tool()
+def ada_adobe_stock_qc() -> str:
+    """Adobe Stock campaign QC — pending candidate image + QC menu spec.
+
+    Read-only. Show the candidate `markdown` (renders the image inline),
+    then present a native question menu with the `menu` options. Tony's
+    pick becomes the asset+decision for ada_adobe_stock_qc_decide
+    (keep|reject|revise); a 'repair' pick means reply with `picker_url`
+    instead — no decide call.
+    """
+    try:
+        camp = _picker_get("/api/campaign", 60)
+        sess = _picker_get("/api/session", 60)
+        assets = camp.get("generated_files") or []
+        focus = ((sess.get("comparison") or {})
+                 .get("last_landed") or {}).get("asset_id") \
+            or (assets[-1] if assets else None)
+        out: dict[str, Any] = {
+            "ok": True, "operation": "adobe-stock-qc",
+            "campaign": _ADOBE_CAMPAIGN,
+            "status": camp.get("status"), "focus_asset": focus,
+            "pending_decisions": camp.get("pending_decisions") or [],
+            "adobe_upload": False,
+        }
+        if focus:
+            out["image_url"] = f"{ADOBE_PICKER}/img/{focus}"
+            out["picker_url"] = f"{ADOBE_PICKER}/?img=/img/{focus}"
+            out["markdown"] = (
+                f"**Candidate: {focus}**\n\n"
+                f"![{focus}]({ADOBE_PICKER}/img/{focus})\n")
+            out["menu"] = [
+                {"id": f"adobe_qc:{d}:{focus}",
+                 "label": f"{d.capitalize()} {focus}"}
+                for d in _QC_DECISIONS
+            ] + [{"id": f"adobe_qc:repair:{focus}",
+                  "label": f"Repair region… ({focus})"}]
+        out["next_safe_action"] = (
+            "show the candidate image markdown, then present a native "
+            "question menu with the `menu` options; on Tony's pick call "
+            "ada_adobe_stock_qc_decide with that asset + decision and "
+            "selection_confirmation=asset — for 'repair' reply with "
+            "picker_url instead of deciding")
+        return json.dumps(out, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({"ok": False, "operation": "adobe-stock-qc",
+                           "error": str(exc)})
+
+
+@mcp.tool()
+def ada_adobe_stock_qc_decide(
+        asset: str, decision: str, note: str = "",
+        selection_confirmation: str = "") -> str:
+    """Record Tony's QC decision for a candidate — mutation, native-menu gate.
+
+    Writes SESSION.json + appends 40-qc-review.md on Drive via the
+    picker-server. Requires selection_confirmation == asset after the
+    native confirmation menu pick; keep|reject|revise only.
+    """
+    if selection_confirmation.strip().lower() != asset.strip().lower():
+        return json.dumps({
+            "ok": False, "operation": "adobe-stock-qc-decide",
+            "error": "selection_confirmation_required",
+            "expected": asset,
+            "next_safe_action": "show a native confirmation menu and "
+                                "retry with the exact selected asset"})
+    dec = decision.strip().lower()
+    if dec not in _QC_DECISIONS:
+        return json.dumps({"ok": False, "operation": "adobe-stock-qc-decide",
+                           "error": f"decision must be one of {_QC_DECISIONS}"})
+    try:
+        res = _picker_post("/api/qc-decision",
+                           {"asset": asset, "decision": dec,
+                            "note": (note or "")[:400]}, timeout=120)
+        return json.dumps({"ok": bool(res.get("ok")),
+                           "operation": "adobe-stock-qc-decide",
+                           "result": res,
+                           "recorded": {"asset": asset, "decision": dec}},
+                          ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({"ok": False,
+                           "operation": "adobe-stock-qc-decide",
+                           "error": str(exc)})
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
