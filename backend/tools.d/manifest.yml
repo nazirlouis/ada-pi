@@ -39,6 +39,11 @@ tools:
     policy: read
     secondary_allowed: false
     timeout_s: 120
+  ada_adobe_stock:
+    module: ada_adobe_stock
+    policy: read
+    secondary_allowed: false
+    timeout_s: 30
   ada_render_video:
     module: ada_render_video
     policy: read

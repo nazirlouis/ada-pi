@@ -787,3 +787,13 @@ ada_sweep: >-
   column= (default backlog), dry_run=true reports gaps without queueing,
   limit= caps at 20. Cards missing executor envelope fields come back as
   per-card gaps — read them aloud, don't retry the whole sweep.
+
+ada_adobe_stock: >-
+  Adobe Stock campaign QC (campaign AS-2026-11-05-REMOTE-WORK-001).
+  action='status' returns the pending candidate, image_url for the card
+  preview, and next_menu buttons; action='decide' records keep|reject|
+  revise for an asset (Tony's call — never decide on his behalf);
+  action='repair_info' returns the region-select picker URL Tony uses to
+  box a defect and submit a repair request. Menu clicks arrive as
+  'next choice adobe_qc:<decision>:<asset>' -> call decide with those
+  parts. Adobe upload is always manual — this tool never uploads.

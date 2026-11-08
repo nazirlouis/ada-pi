@@ -430,6 +430,7 @@ coverage_debt:
   - weather_station
   - ada_sweep
   - ada_lesson
+  - ada_adobe_stock
 
 # Tools that legitimately never get a live scenario (pure meta/report
 # surfaces). Empty at census — prefer coverage_debt over listing here.
