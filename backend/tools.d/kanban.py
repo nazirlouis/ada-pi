@@ -780,6 +780,22 @@ async def _ask(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
                     "leave it for him, not that it is decided"}
 
 
+def _card_gates(card: dict[str, Any]) -> list[str]:
+    """The single authority check — why executing on this card is
+    Tony's call, or []. This list IS the card-judgment matrix: the bench
+    corpus labels and the ADA_SYSTEM scorer prompt in
+    scripts/bench/card-judgment (chaba) are generated from this rule —
+    change it here first, then rebuild the corpus."""
+    gated: list[str] = []
+    if str(card.get("priority") or "").lower() == "high":
+        gated.append("priority:high")
+    if str(card.get("review_kind") or "").lower() == "decide":
+        gated.append("review_kind:decide")
+    if any(_PRODSEC_TAG.search(str(t)) for t in (card.get("tags") or [])):
+        gated.append("prod/security tag")
+    return gated
+
+
 def _gate_reason(card: dict[str, Any], target: str,
                  doing_count: int, doing_limit: int,
                  evidence: str) -> str | None:
@@ -799,14 +815,7 @@ def _gate_reason(card: dict[str, Any], target: str,
     if cur == "doing" and target in ("backlog", "review"):
         return None                      # releasing / handing off work
     if cur == "review" and target == "done":
-        gated: list[str] = []
-        if str(card.get("priority") or "").lower() == "high":
-            gated.append("priority:high")
-        if str(card.get("review_kind") or "").lower() == "decide":
-            gated.append("review_kind:decide")
-        if any(_PRODSEC_TAG.search(str(t))
-               for t in (card.get("tags") or [])):
-            gated.append("prod/security tag")
+        gated = _card_gates(card)
         if gated:
             return ("closing this card is Tony's call — it is marked "
                     + ", ".join(gated))
@@ -934,14 +943,7 @@ async def _queue(runner: Any, args: dict[str, Any],
         stale = await _stale_check(client, args, cid, card=card, ctx=ctx)
         if stale:
             return stale
-        gated: list[str] = []
-        if str(card.get("priority") or "").lower() == "high":
-            gated.append("priority:high")
-        if str(card.get("review_kind") or "").lower() == "decide":
-            gated.append("review_kind:decide")
-        if any(_PRODSEC_TAG.search(str(t))
-               for t in (card.get("tags") or [])):
-            gated.append("prod/security tag")
+        gated = _card_gates(card)
         if gated:
             reason = ("queueing this card is Tony's call — it is marked "
                       + ", ".join(gated))
