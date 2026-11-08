@@ -14,12 +14,7 @@ DECLARATION = {
     "description": (
         "Queue a preflight-approved OpenCode job for an exact card. "
         "Requires explicit confirmation; never changes model, key, host, "
-        "profile, artifact, or limits implicitly. "
-        "Approval may be Tony's spoken yes (call with confirmed=true after "
-        "he confirms) or his board click — when a kanban 'ask' you raised "
-        "for this dispatch is answered yes, re-read the card, then send "
-        "confirmed=true. After dispatch: kanban action='status'/read "
-        "reports the runner verdict — tell Tony the outcome."
+        "profile, artifact, or limits implicitly."
     ),
     "parameters": {
         "type": "object",

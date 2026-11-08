@@ -797,3 +797,18 @@ ada_adobe_stock: >-
   box a defect and submit a repair request. Menu clicks arrive as
   'next choice adobe_qc:<decision>:<asset>' -> call decide with those
   parts. Adobe upload is always manual — this tool never uploads.
+
+ada_opencode: >-
+  preflight validates the card's OpenCode envelope (budget, artifact,
+  verifier) and returns a signed approval_receipt. For hands-off
+  dispatch: preflight -> kanban action='ask' ("approve dispatch of
+  <task>?") on the card -> when Tony's respond lands yes (re-read the
+  card, requests carry the answer) -> dispatch with confirmed=true
+  inside the receipt window. Never invent the receipt fields.
+
+ada_opencode_dispatch: >-
+  Needs the exact preflight receipt + explicit confirmation — Tony's
+  spoken yes (confirmed=true after he confirms) or his board click on
+  an ask you raised for this dispatch (re-read the card first). After
+  dispatch: kanban status/read reports the runner verdict — report the
+  outcome, never describe an unverified run as done.
