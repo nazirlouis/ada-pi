@@ -1104,7 +1104,7 @@ class ToolRunner(
                      or str(args.get("target") or "").strip().lower()
                      in {"tv", "screen"}))
         )
-        if gated and confirmed is not True and self._is_secondary_turn():
+        if gated and not _confirmed_truthy(confirmed) and self._is_secondary_turn():
             logger.warning(
                 "denied %s %r: camera capture by secondary speaker "
                 "without confirmed=true", name, args)
@@ -1250,7 +1250,7 @@ class ToolRunner(
             pending = getattr(self, "_cms_pending", None)
             if pending is None:
                 pending = self._cms_pending = {}
-            if confirmed is True:
+            if _confirmed_truthy(confirmed):
                 if pending.get(pkey) is not None or _CALLER_VERIFIED_AFFIRM.get():
                     # A provider-verified user affirmation already covers the
                     # ask-step — the register round-trip is friction, not
