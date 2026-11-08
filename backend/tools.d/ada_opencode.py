@@ -17,7 +17,12 @@ DECLARATION = {
     "description": (
         "Ada/OpenCode control plane — action='preflight'|'status'|'receipts'. "
         "Read-only: validates a card's explicit OpenCode envelope, budget "
-        "limits, artifact, and verifier before any dispatch."
+        "limits, artifact, and verifier before any dispatch. "
+        "APPROVAL FLOW for hands-off dispatch: preflight, then raise a "
+        "board request (kanban action='ask', ask=\"approve dispatch of "
+        "<task>?\") naming the card; when Tony's respond lands with a yes "
+        "(re-read the card — requests carry the answer), dispatch with "
+        "confirmed=true inside the receipt window."
     ),
     "parameters": {
         "type": "object",
