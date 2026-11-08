@@ -1,6 +1,12 @@
-# ada-opencode deploy
+# ada-code deploy (aka opencode-ada)
 
-Canonical sources for the ada-opencode OpenCode instance (container on idc02,
+**Naming (2026-11-08):** `ada-code` is the canonical name for Ada's OpenCode
+responder — the surface where Ada answers via OpenCode + ada-control MCP.
+`opencode-ada` / `ada-opencode` are the SAME thing (legacy names still used
+by the hostname, quadlets, and volume dirs — treat as aliases, do not create
+a second instance).
+
+Canonical sources for the ada-code OpenCode instance (container on idc02,
 serve :4096, UI at ada-ha.surf-thailand.com/chaba-admin/opencode-ada).
 
 Deploy path: ~/.local/share/ada-opencode/workspace/
