@@ -91,15 +91,22 @@ async def _status() -> dict[str, Any]:
                          "label": f"{dec.capitalize()} {focus}"})
         menu.append({"id": f"adobe_qc:repair:{focus}",
                      "label": f"Repair region… ({focus})"})
-    return {
+    out = {
         "ok": True, "campaign": CAMPAIGN,
         "stage": camp.get("stage"), "status": camp.get("status"),
         "focus_asset": focus, "candidates": candidates,
         "pending_decisions": camp.get("pending_decisions") or [],
+        # ws gate (realtime_provider ~L6111) only passes next_menu through
+        # when operation is next/next_choice; _safe_args keeps scalar
+        # strings, so image_url must be a flat scalar to render as media.
+        "operation": "next",
         "next_menu": menu,
         "picker_url": (f"{PICKER}/?img=/img/{focus}" if focus else PICKER),
         "adobe_upload": False,
     }
+    if focus:
+        out["image_url"] = f"{PICKER}/img/{focus}"
+    return out
 
 
 async def _gather() -> tuple[dict, dict]:
