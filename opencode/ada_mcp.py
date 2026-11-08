@@ -364,6 +364,109 @@ def _asset_preview(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _markdown_text(value: Any) -> str:
+    """Keep exported asset labels safe when inserted into Markdown."""
+    return str(value or "Untitled asset").replace("\\", "\\\\").replace(
+        "[", "\\[").replace("]", "\\]")
+
+
+def _preview_markdown(assets: list[dict[str, Any]]) -> str:
+    """Build an OpenChamber-friendly preview block from normalized assets."""
+    lines = ["### Adobe Stock previews", ""]
+    if not assets:
+        return "### Adobe Stock previews\n\nNo matching assets."
+    for asset in assets:
+        title = _markdown_text(asset.get("title") or asset.get("id"))
+        preview = asset["preview"]
+        lines.append(f"**{title}** (`{asset.get('id', 'unknown')}`)")
+        if preview["thumbnail_url"]:
+            lines.append(
+                f"![{title}](<{preview['thumbnail_url']}>)"
+            )
+        if preview["preview_url"]:
+            lines.append(
+                f"[Open full preview](<{preview['preview_url']}>)"
+            )
+        if preview["status"] == "unavailable":
+            lines.append(f"> Preview unavailable: {preview['reason']}.")
+        elif preview["warnings"]:
+            lines.append(f"> Preview warning: {'; '.join(preview['warnings'])}.")
+        if preview["source_ref"]:
+            lines.append(f"Source: `{preview['source_ref']}`")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _preview_html(assets: list[dict[str, Any]], campaign_idea: str) -> str:
+    """Build a self-contained HTML preview page for OpenChamber Preview/browser."""
+    import html as _html
+
+    cards = []
+    if not assets:
+        cards.append('<p class="empty">No matching assets.</p>')
+    for asset in assets:
+        title = _html.escape(str(asset.get("title") or asset.get("id") or "untitled"))
+        aid = _html.escape(str(asset.get("id") or "unknown"))
+        preview = asset["preview"]
+        thumb = preview.get("thumbnail_url") or preview.get("preview_url")
+        img = (
+            f'<a href="{_html.escape(preview["preview_url"] or preview["thumbnail_url"] or "#", quote=True)}" target="_blank" rel="noopener">'
+            f'<img class="thumb" src="{_html.escape(thumb, quote=True)}" alt="{title}" loading="lazy"></a>'
+            if thumb
+            else '<div class="noimg">preview unavailable</div>'
+        )
+        links = ""
+        if preview.get("preview_url"):
+            links += (
+                f'<a class="full" href="{_html.escape(preview["preview_url"], quote=True)}" '
+                'target="_blank" rel="noopener">Open full preview</a>'
+            )
+        status = _html.escape(str(preview.get("status") or ""))
+        warnings = "".join(
+            f'<p class="warn">⚠ {_html.escape(w)}</p>'
+            for w in preview.get("warnings") or []
+        )
+        if preview.get("status") == "unavailable":
+            warnings += f'<p class="warn">Preview unavailable: {_html.escape(str(preview.get("reason") or ""))}</p>'
+        source = _html.escape(str(preview.get("source_ref") or ""))
+        tags = ", ".join(_html.escape(str(t)) for t in (asset.get("tags") or [])[:8])
+        cards.append(
+            f'<section class="card">{img}'
+            f'<h3>{title}</h3><p class="meta"><code>{aid}</code> · {status}'
+            f'{(" · " + tags) if tags else ""}</p>{links}{warnings}'
+            f'<p class="src">Source: <code>{source}</code></p></section>'
+        )
+    idea = _html.escape(campaign_idea)
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>Adobe Stock previews — {idea}</title><style>"
+        "body{font-family:system-ui,sans-serif;margin:24px;background:#0f1115;color:#e8e8e8}"
+        "h1{font-size:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}"
+        ".card{background:#1a1d24;border:1px solid #2a2f3a;border-radius:10px;padding:12px}"
+        ".thumb{width:100%;height:140px;object-fit:cover;border-radius:6px;background:#000;display:block}"
+        ".noimg{height:140px;display:flex;align-items:center;justify-content:center;background:#000;border-radius:6px;color:#777}"
+        "h3{font-size:14px;margin:10px 0 4px}.meta{font-size:12px;color:#9aa}.full{font-size:13px}"
+        ".warn{color:#f0b429;font-size:12px}.src{font-size:11px;color:#667}.empty{color:#888}"
+        "a{color:#7db4ff;text-decoration:none}code{background:#000;padding:1px 4px;border-radius:3px}"
+        "</style></head><body>"
+        f"<h1>Adobe Stock previews — {_html.escape(campaign_idea)}</h1>"
+        f"<div class='grid'>{''.join(cards)}</div></body></html>"
+    )
+
+
+def _write_preview_html(html: str, campaign_idea: str) -> Path:
+    """Persist the preview page under the bounded workspace previews dir."""
+    import re as _re
+
+    slug = _re.sub(r"[^a-z0-9]+", "-", campaign_idea.lower()).strip("-")[:48] or "preview"
+    out_dir = WORKSPACE / ".adobe-stock" / "previews"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{slug}.html"
+    path.write_text(html, encoding="utf-8")
+    return path
+
+
 def build_adobe_stock_reuse_report(
     campaign_idea: str,
     *,
@@ -404,6 +507,7 @@ def build_adobe_stock_reuse_report(
             "thumbnail_only": preview_statuses.count("thumbnail-only"),
             "unavailable": preview_statuses.count("unavailable"),
         },
+        "openchamber_preview_markdown": _preview_markdown(reusable_assets),
         "reusable_prompt_patterns": _rank_adobe_items(indexes.get("prompt-patterns", []), idea),
         "prior_rejection_patterns": _rank_adobe_items(indexes.get("rejection-patterns", []), idea),
         "facts": ["Every related item includes a source record from the bounded inputs."],
@@ -749,8 +853,12 @@ def ada_memory_search(query: str) -> str:
 
 
 @mcp.tool()
-def ada_adobe_stock_reuse(campaign_idea: str) -> str:
-    """Build a read-only Adobe Stock reuse report from bounded indexes and memory."""
+def ada_adobe_stock_reuse(campaign_idea: str, compact: bool = False) -> str:
+    """Build a read-only Adobe Stock reuse report from bounded indexes and memory.
+
+    compact=True returns only the preview summary and OpenChamber markdown —
+    the full report exceeds tool-output display limits in OpenCode/OpenChamber.
+    """
     try:
         indexes, missing = _read_adobe_stock_indexes()
         report = build_adobe_stock_reuse_report(
@@ -758,6 +866,36 @@ def ada_adobe_stock_reuse(campaign_idea: str) -> str:
             indexes=indexes,
             missing_indexes=missing,
         )
+        if compact:
+            preview_html_path = None
+            try:
+                preview_html_path = _write_preview_html(
+                    _preview_html(
+                        report.get("reusable_assets") or [],
+                        str(report.get("campaign_idea") or campaign_idea),
+                    ),
+                    str(report.get("campaign_idea") or campaign_idea),
+                )
+            except Exception:
+                preview_html_path = None
+            return json.dumps(
+                {
+                    "ok": True,
+                    "operation": "adobe-stock-reuse",
+                    "compact": True,
+                    "campaign_idea": report.get("campaign_idea"),
+                    "preview_summary": report.get("preview_summary"),
+                    "openchamber_preview_markdown": report.get(
+                        "openchamber_preview_markdown"
+                    ),
+                    "preview_html_path": (
+                        str(preview_html_path) if preview_html_path else None
+                    ),
+                    "mutations_performed": [],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         return json.dumps(
             {"ok": True, "operation": "adobe-stock-reuse", "report": report},
             ensure_ascii=False,

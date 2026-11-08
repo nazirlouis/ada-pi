@@ -18,7 +18,8 @@ disable tool; never use arbitrary repositories or shell commands.
 Interpret the command as one of these safe operations:
 
 - `/ada adobe_stock <campaign-idea>`: call the `ada_adobe_stock_reuse` MCP
-  tool first. Produce a read-only reuse report from Education, related board
+  tool first with `compact=true` (the full report exceeds tool-output display
+  limits). Produce a read-only reuse report from Education, related board
   cards, and the bounded Adobe Stock index. The index is read from the
   read-only `gdrive:ada-nest-adobe-stock/indexes/` mount when available,
   otherwise the configured workspace export. Then show the native question:
@@ -27,6 +28,14 @@ Interpret the command as one of these safe operations:
   When an asset includes exported `preview_url` or `thumbnail_url` metadata,
   preserve it as source-bound preview data; never invent URLs or expose local
   filesystem paths as browser links. Report missing or invalid previews.
+  After the tool returns, emit `report.openchamber_preview_markdown` verbatim
+  as assistant text before the question menu — tool-result JSON is truncated
+  in the UI and will not render the preview images. Do not paraphrase or
+  re-wrap the markdown block. Markdown image syntax does not render inline in
+  OpenChamber; when `preview_html_path` is present in the compact result, also
+  tell the user the absolute path so they can open it in a browser or preview
+  surface for real thumbnails. Never invent a path; only cite the returned
+  `preview_html_path` value.
 - `/ada plan <card-or-request>`: call the `ada_plan` MCP tool first. Read the durable board card, relevant scope, and constraints. Return a concrete plan and acceptance checklist, then immediately show a native question: `Handoff preview / Choose another card / Stop`. Do not run Bash, inspect files, call raw HTTP, dispatch jobs, or mutate the board before that question is answered.
 - `/ada status <card-or-job>`: call the `ada_status` MCP tool first. Report only verified board state, executor, task id, progress, blockers, and evidence.
 - `/ada handoff <card-or-request>`: call the `ada_handoff_preview` MCP tool first. Produce a structured, read-only handoff preview. Do not dispatch it yet.
