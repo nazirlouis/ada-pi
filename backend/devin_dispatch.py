@@ -1,8 +1,17 @@
-"""Headless Devin session dispatch via `devin-dispatch` on tony-dell.
+"""Headless Devin session dispatch.
 
-Ada calls devin-dispatch over ssh (BatchMode); each task runs as a
-systemd --user unit in a dedicated git worktree on tony-dell. Completion
-is reported back by devin-dispatch-watch.timer (chaba-admin event +
+Two launch paths:
+
+- no playbook — the tuned path: files an armed kanban card through
+  board-api POST /card (action dispatch, queue:true); kanban-dispatch
+  claims it and runs the session on a runner. No ssh fallback: the
+  board IS the entry point, so an unreachable board is an error, not
+  a bypass.
+- playbook=<name> — ssh `devin-dispatch start` on tony-dell
+  (BatchMode); each task runs as a systemd --user unit in a dedicated
+  git worktree, gated + stamped per the playbook contract.
+
+Completion is reported back by the dispatch watcher (chaba-admin event +
 iPhone notify + devin-bank outcome doc), so these tools only deal in
 launch/status/followup — never wait for a session to finish.
 
@@ -23,6 +32,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from backend import board_client
 
 logger = logging.getLogger("tools.devin_dispatch")
 
@@ -65,16 +76,32 @@ def _task_tokens(text: str) -> frozenset[str]:
     )
 
 
-# repo -> [(tokens, task_id, monotonic_ts)]
-_recent_dispatches: dict[str, list[tuple[frozenset[str], str, float]]] = {}
+# repo -> [(tokens, ref_id, is_card, monotonic_ts)] — ref_id is the
+# devin-dispatch task id for playbook sessions, the board card id for
+# voice-dispatch cards.
+_recent_dispatches: dict[
+    str, list[tuple[frozenset[str], str, bool, float]]] = {}
 
 # devin-dispatch task ids: YYYYMMDD-HHMMSS-<30-char slug>
 _TASK_ID_RE = re.compile(r"^(\d{8})-(\d{6})-([a-z0-9-]+)$")
 
 
-def _dedup_result(task_id: str, repo: str) -> dict:
+def _dedup_result(ref_id: str, repo: str, *,
+                  card_id: str | None = None) -> dict:
+    if card_id:
+        return {
+            "ok": True,
+            "card_id": card_id,
+            "repo": repo,
+            "deduplicated": True,
+            "note": (
+                "A matching card was already queued on the board "
+                "recently; reusing it instead of filing a duplicate. "
+                "kanban-dispatch will claim and run it."
+            ),
+        }
     return {
-        "task_id": task_id,
+        "task_id": ref_id,
         "repo": repo,
         "deduplicated": True,
         "note": (
@@ -422,20 +449,98 @@ async def _stamp_contract(mddb: Any, task_id: str, name: str,
     return key if ok else None
 
 
+# -- Board dispatch (no-playbook path) -------------------------------------
+#
+# Files an armed card through board-api POST /card — the same contract
+# the CMS spawn route uses (pwa_server /api/cms/spawn): action{type:
+# dispatch, repo} + queue:true puts it on kanban-dispatch's claim rail;
+# the runner picks it up and the board tracks the session. The card's
+# spec field carries the full task text plus a provenance line; board-api
+# validates action.repo against its dispatch whitelist and 400s on a repo
+# it won't run — surfaced verbatim.
+
+# Card writes can sit behind the board page rebuild under flock (~45s on
+# the Caddy route per tools.d/kanban.py) — a read-y timeout would report
+# unreachable on a write that landed.
+_BOARD_TIMEOUT_S = float(os.environ.get("ADA_BOARD_DISPATCH_TIMEOUT_S", "75"))
+_CARD_TITLE_MAX = 80
+_CARD_PROVENANCE = "Dispatched by Ada voice/chat on behalf of the user."
+_CARD_CREATED_RE = re.compile(r"card\s+([a-z0-9][a-z0-9._-]*)",
+                              re.IGNORECASE)
+
+
+def _created_card_id(data: dict[str, Any] | None) -> str | None:
+    """Pull the created card's id out of a POST /card response — check the
+    structured fields first, then the 'card <id> ...' message text (same
+    parse kanban.py's action=file uses)."""
+    data = data or {}
+    for key in ("id", "card_id"):
+        cid = str(data.get(key) or "").strip()
+        if cid:
+            return cid
+    card = data.get("card")
+    if isinstance(card, dict) and card.get("id"):
+        return str(card["id"])
+    m = _CARD_CREATED_RE.search(str(data.get("message") or ""))
+    return m.group(1) if m else None
+
+
+async def _board_dispatch(repo: str, task: str) -> dict:
+    """Queue the task as an armed kanban card; returns the tool result."""
+    card_id = f"voice-dispatch-{int(time.time())}"
+    status, data = await board_client.post("/card", {
+        "id": card_id,
+        "title": " ".join(task.split())[:_CARD_TITLE_MAX],
+        "spec": task.strip() + "\n\n" + _CARD_PROVENANCE,
+        "column": "backlog",
+        "tags": ["voice-dispatch"],
+        "priority": "medium",
+        "action": {"type": "dispatch", "repo": repo},
+        "queue": True,
+        "on_exists": "queue",
+        "from": "ada",
+        "text": _CARD_PROVENANCE,
+    }, timeout=_BOARD_TIMEOUT_S)
+    if status == 0:
+        # No ssh fallback: the board is the dispatch rail — bypassing it
+        # would launch untracked work.
+        return {"ok": False,
+                "error": ("board-api is unreachable "
+                          f"({data.get('error') or 'no response'}) — the "
+                          "dispatch card was not filed. Say the dispatch "
+                          "failed; do not retry immediately.")}
+    if status >= 400:
+        # e.g. repo not in board-api's dispatch whitelist — the server's
+        # 'error' field is the message to relay.
+        return {"ok": False, "status": status,
+                "error": str(data.get("error")
+                             or f"board-api HTTP {status}")}
+    return {
+        "ok": True,
+        "card_id": _created_card_id(data) or card_id,
+        "note": ("queued on the board — kanban-dispatch will claim and "
+                 "run it"),
+    }
+
+
 async def dispatch(repo: str, task: str | None = None, *,
                    playbook: str | None = None,
                    params: dict[str, Any] | None = None,
                    mddb: Any = None,
                    caller: str | None = None,
                    is_owner: bool = False) -> dict:
-    """Start a headless Devin session. Returns the task id + registry info.
+    """Start a headless Devin session.
 
     With playbook=<name> the task is rendered from
     backend/playbooks/<name>.yml: params feed the template, the declared
     gate is enforced before anything is dispatched (build-tool refuses
     when its spec doc is missing or not status=pass), and the finished
     task is stamped into the job ledger as job/<task_id>/contract carrying
-    the playbook + verify list for devin-dispatch-watch.
+    the playbook + verify list for devin-dispatch-watch. Returns the
+    devin-dispatch task id + registry info.
+
+    Without a playbook the task is filed as an armed kanban card via
+    board-api and kanban-dispatch claims it — returns the card id.
     """
     pb: dict[str, Any] | None = None
     values: dict[str, str] = {}
@@ -458,23 +563,31 @@ async def dispatch(repo: str, task: str | None = None, *,
     now = time.monotonic()
     toks = _task_tokens(task)
     entries = _recent_dispatches.setdefault(repo, [])
-    entries[:] = [e for e in entries if now - e[2] < DEDUP_WINDOW_S]
+    entries[:] = [e for e in entries if now - e[3] < DEDUP_WINDOW_S]
     dupe = None
-    for prev_toks, prev_id, _ in entries:
+    dupe_is_card = False
+    for prev_toks, prev_id, prev_is_card, _ in entries:
         if not toks or not prev_toks:
             continue
         sim = len(toks & prev_toks) / min(len(toks), len(prev_toks))
         if sim >= DEDUP_MIN_SIM:
             dupe = prev_id
+            dupe_is_card = prev_is_card
             break
     if dupe is None:
         dupe = await _remote_dupe(repo, toks)
     if dupe is not None:
         logger.info("dedup: reusing %s for similar task", dupe)
-        entries.append((toks, dupe, now))
-        return _dedup_result(dupe, repo)
+        entries.append((toks, dupe, dupe_is_card, now))
+        return _dedup_result(dupe, repo,
+                           card_id=dupe if dupe_is_card else None)
+    if pb is None:
+        res = await _board_dispatch(repo, task)
+        if res.get("ok"):
+            entries.append((toks, res["card_id"], True, now))
+        return res
     task_id = (await _run("start", repo, task)).strip()
-    entries.append((toks, task_id, now))
+    entries.append((toks, task_id, False, now))
     result = {
         "task_id": task_id,
         "repo": repo,
@@ -484,19 +597,18 @@ async def dispatch(repo: str, task: str | None = None, *,
             "notification is sent automatically when it finishes."
         ),
     }
-    if pb is not None:
-        contract = await _stamp_contract(mddb, task_id, playbook, pb, values)
-        result.update({
-            "playbook": playbook,
-            "verify": pb["verify"],
-            "report_to": pb["report_to"],
-            "max_runtime_min": pb["max_runtime_min"],
-        })
-        if contract:
-            result["job_contract"] = contract
-        else:
-            result["note"] += (" (job-contract stamp skipped — memory "
-                               "store unavailable)")
+    contract = await _stamp_contract(mddb, task_id, playbook, pb, values)
+    result.update({
+        "playbook": playbook,
+        "verify": pb["verify"],
+        "report_to": pb["report_to"],
+        "max_runtime_min": pb["max_runtime_min"],
+    })
+    if contract:
+        result["job_contract"] = contract
+    else:
+        result["note"] += (" (job-contract stamp skipped — memory "
+                           "store unavailable)")
     return result
 
 

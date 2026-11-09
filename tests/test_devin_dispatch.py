@@ -43,35 +43,50 @@ class RunQuotingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("'" + dd.BIN, remote_cmd)
 
 
+def _patch_board(captured: list | None = None, status: int = 200,
+                 data: dict | None = None):
+    """Mock board_client.post -> (status, data); captures (path, body)."""
+    async def fake_post(path, body, timeout=10.0):
+        if captured is not None:
+            captured.append((path, body))
+        return status, (data if data is not None else {"id": "card-b1"})
+
+    return patch.object(dd.board_client, "post", new=fake_post)
+
+
+def _no_remote_dupe():
+    return patch.object(dd, "_remote_dupe", new=AsyncMock(return_value=None))
+
+
 class DispatchDedupTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         dd._recent_dispatches.clear()
 
-    async def test_similar_retry_reuses_task_id(self):
-        with _patch_exec([], stdout=b"20260924-073049-task-a\n"):
+    async def test_similar_retry_reuses_card_id(self):
+        with _patch_board(), _no_remote_dupe():
             first = await dd.dispatch(
                 "chaba",
                 "Investigate why the Nobito PM2.5 sensor reading has been "
                 "stuck at 72.0. Check history trends, device availability, "
                 "and Home Assistant integration logs.",
             )
-        with _patch_exec([], stdout=b"should-not-run\n") as _:
-            with patch.object(dd, "_run", wraps=dd._run) as run_spy:
-                second = await dd.dispatch(
-                    "chaba",
-                    "Investigate stuck Nobito PM2.5 sensor reading. "
-                    "Check history, availability, and logs.",
-                )
-        self.assertEqual(second["task_id"], first["task_id"])
+        captured: list = []
+        with _patch_board(captured), _no_remote_dupe():
+            second = await dd.dispatch(
+                "chaba",
+                "Investigate stuck Nobito PM2.5 sensor reading. "
+                "Check history, availability, and logs.",
+            )
+        self.assertEqual(second["card_id"], first["card_id"])
         self.assertTrue(second["deduplicated"])
-        self.assertEqual(run_spy.call_count, 0)
+        self.assertEqual(captured, [])  # no second card filed
 
     async def test_different_task_still_dispatches(self):
-        with _patch_exec([], stdout=b"task-a\n"):
+        with _patch_board(data={"id": "card-a"}), _no_remote_dupe():
             await dd.dispatch("chaba", "Investigate stuck Nobito PM2.5 sensor reading.")
-        with _patch_exec([], stdout=b"task-b\n"):
+        with _patch_board(data={"id": "card-b"}), _no_remote_dupe():
             second = await dd.dispatch("chaba", "Check the Rika RK600 weather station battery.")
-        self.assertEqual(second["task_id"], "task-b")
+        self.assertEqual(second["card_id"], "card-b")
         self.assertNotIn("deduplicated", second)
 
     def _status_line(self, task_id: str) -> str:
@@ -94,33 +109,23 @@ class DispatchDedupTests(unittest.IsolatedAsyncioTestCase):
                - timedelta(seconds=dd.DEDUP_WINDOW_S + 60)
                ).strftime("%Y%m%d-%H%M%S")
         tid = f"{old}-investigate-why-the-nobito-pm2"
-        calls = []
-
-        async def fake_run(*args):
-            calls.append(args)
-            return self._status_line(tid) if args[0] == "status" else "task-new\n"
-
-        with patch.object(dd, "_run", new=fake_run):
-            res = await dd.dispatch(
-                "chaba", "Investigate stuck Nobito PM2.5 sensor reading.")
-        self.assertEqual(res["task_id"], "task-new")
+        with patch.object(dd, "_run", new=AsyncMock(
+                return_value=self._status_line(tid))):
+            with _patch_board(data={"id": "card-new"}):
+                res = await dd.dispatch(
+                    "chaba", "Investigate stuck Nobito PM2.5 sensor reading.")
+        self.assertEqual(res["card_id"], "card-new")
         self.assertNotIn("deduplicated", res)
-        self.assertEqual(calls[1][0], "start")
 
     async def test_remote_dupe_ignores_other_repo(self):
         recent = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         tid = f"{recent}-investigate-why-the-nobito-pm2"
         status_out = self._status_line(tid).replace("repo=chaba", "repo=ada-voice")
-        calls = []
-
-        async def fake_run(*args):
-            calls.append(args)
-            return status_out if args[0] == "status" else "task-new\n"
-
-        with patch.object(dd, "_run", new=fake_run):
-            res = await dd.dispatch(
-                "chaba", "Investigate stuck Nobito PM2.5 sensor reading.")
-        self.assertEqual(res["task_id"], "task-new")
+        with patch.object(dd, "_run", new=AsyncMock(return_value=status_out)):
+            with _patch_board(data={"id": "card-new"}):
+                res = await dd.dispatch(
+                    "chaba", "Investigate stuck Nobito PM2.5 sensor reading.")
+        self.assertEqual(res["card_id"], "card-new")
         self.assertNotIn("deduplicated", res)
 
 
@@ -360,11 +365,94 @@ class PlaybookDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("devin_answer_gate", task_text)
         self.assertIn("Reported symptom: times out on turn 2", task_text)
 
-    async def test_plain_dispatch_unchanged(self):
-        with _patch_exec([], stdout=b"t-6\n"):
+    async def test_plain_dispatch_files_card(self):
+        # No playbook -> armed kanban card, not an ssh devin-dispatch start.
+        with _patch_board(data={"id": "card-plain"}), _no_remote_dupe():
             res = await dd.dispatch("chaba", "Check the weather station.")
-        self.assertEqual(res["task_id"], "t-6")
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["card_id"], "card-plain")
         self.assertNotIn("playbook", res)
+
+
+class BoardDispatchTests(unittest.IsolatedAsyncioTestCase):
+    """No-playbook dispatch files an armed card via board-api."""
+
+    def setUp(self):
+        dd._recent_dispatches.clear()
+
+    async def test_card_payload(self):
+        task = ("Check why the living room plug drops off wifi every "
+                "night around 2am and report back with the cause")
+        captured: list = []
+        with _patch_board(captured), _no_remote_dupe():
+            res = await dd.dispatch("chaba", task)
+        self.assertTrue(res["ok"])
+        self.assertEqual(len(captured), 1)
+        path, body = captured[0]
+        self.assertEqual(path, "/card")
+        self.assertLessEqual(len(body["title"]), 80)
+        self.assertTrue(body["title"].startswith("Check why the living"))
+        self.assertIn(task, body["spec"])
+        self.assertIn("Dispatched by Ada voice/chat", body["spec"])
+        self.assertEqual(body["column"], "backlog")
+        self.assertEqual(body["tags"], ["voice-dispatch"])
+        self.assertEqual(body["priority"], "medium")
+        self.assertEqual(body["action"],
+                         {"type": "dispatch", "repo": "chaba"})
+        self.assertTrue(body["queue"])
+        self.assertIn("Ada voice/chat", body["text"])
+
+    async def test_title_truncated_to_80(self):
+        captured: list = []
+        with _patch_board(captured), _no_remote_dupe():
+            await dd.dispatch("chaba", "x" * 200)
+        self.assertEqual(len(captured[0][1]["title"]), 80)
+
+    async def test_result_reports_card_id_and_queued_note(self):
+        with _patch_board(
+                data={"id": "voice-dispatch-99",
+                      "message": "card voice-dispatch-99 created"}), \
+                _no_remote_dupe():
+            res = await dd.dispatch("chaba", "Check the weather station.")
+        self.assertEqual(res, {
+            "ok": True,
+            "card_id": "voice-dispatch-99",
+            "note": ("queued on the board — kanban-dispatch will claim "
+                     "and run it"),
+        })
+
+    async def test_card_id_parsed_from_message(self):
+        with _patch_board(
+                data={"message": "card check-the-weather created"}), \
+                _no_remote_dupe():
+            res = await dd.dispatch("chaba", "Check the weather station.")
+        self.assertEqual(res["card_id"], "check-the-weather")
+
+    async def test_card_id_falls_back_to_deterministic_id(self):
+        with _patch_board(data={"message": "ok"}), _no_remote_dupe():
+            res = await dd.dispatch("chaba", "Check the weather station.")
+        self.assertTrue(res["card_id"].startswith("voice-dispatch-"))
+
+    async def test_unreachable_returns_error_no_ssh_fallback(self):
+        captured: list = []
+        with _patch_board(captured, status=0,
+                          data={"error": "I couldn't reach the board"}), \
+                _no_remote_dupe(), \
+                patch.object(dd, "_run", new=AsyncMock()) as run_mock:
+            res = await dd.dispatch("chaba", "Check the weather station.")
+        self.assertFalse(res["ok"])
+        self.assertIn("unreachable", res["error"])
+        # no direct devin-dispatch ssh fallback — the board IS the rail
+        run_mock.assert_not_called()
+
+    async def test_whitelist_400_surfaced_verbatim(self):
+        err = "repo 'nope' not in dispatch whitelist"
+        with _patch_board(status=400, data={"error": err}), \
+                _no_remote_dupe():
+            res = await dd.dispatch("nope", "Check the weather station.")
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], err)
+        self.assertEqual(res["status"], 400)
 
 
 class StatusTrimTests(unittest.IsolatedAsyncioTestCase):
