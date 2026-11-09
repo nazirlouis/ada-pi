@@ -480,11 +480,12 @@ ada_resolve_action: >-
   after the user accepts/declines.
 
 devin: >-
-  'dispatch' starts an unattended session on tony-dell in a dedicated
-  worktree — repo= chaba|ada-voice|sunsynk-card (pick where the CODE lives:
+  'dispatch' files an armed card on the kanban board — repo=
+  chaba|ada-voice|sunsynk-card (pick where the CODE lives:
   chaba = /apps/* web apps + relay + dashboards + SSOT; ada-voice = Ada
-  backend/pwa/auth/scenarios; sunsynk-card = the power-flow card). The
-  user is phone-notified on finish — report the task id, move on.
+  backend/pwa/auth/scenarios; sunsynk-card = the power-flow card).
+  kanban-dispatch claims and runs it asynchronously; the dispatch watcher
+  notifies the user on finish — report the card id, move on.
   'followup' steers/resumes a session by task_id+message; 'answer'
   delivers a refined self-contained reply to a blocked job (the job sees
   only the text). All actions confirmed-gated — restate repo/task/

@@ -1,0 +1,105 @@
+# SSOT Job: voice dispatch -> board card auto-create.
+# Card: voice-dispatch-card-autocreate (chaba kanban). Dispatch
+# 20261109-181807-repo-ada-voice-primary-change-, runner idc02.
+
+title: >-
+  Voice/chat devin dispatch files an armed kanban card instead of ssh
+  devin-dispatch start
+subtitle: >-
+  backend/devin_dispatch.py no-playbook path now POSTs board-api /card
+  (action dispatch, queue:true); kanban-dispatch claims and runs it.
+  Playbook path unchanged.
+
+planning:
+  goal: |
+    Before this job every `devin action='dispatch'` shelled out to
+    `devin-dispatch start` on tony-dell — an untracked launch the board
+    never saw. Now the no-playbook path files an armed card through
+    board-api POST /card: {id: voice-dispatch-<epoch>, title: task[:80],
+    spec: task + provenance line, column: backlog, tags:
+    [voice-dispatch], priority: medium, action: {type: dispatch, repo:
+    <repo>}, queue: true, on_exists: queue, from: ada, text: provenance
+    comms}. board-api validates action.repo against its dispatch
+    whitelist (400 surfaced verbatim) and kanban-dispatch claims the
+    card — the same rails CMS spawn (/api/cms/spawn) already used.
+  scope: |
+    Delivered:
+      - backend/devin_dispatch.py — _board_dispatch() + _created_card_id()
+        (same id parse as tools.d/kanban.py action=file), board reach via
+        shared backend/board_client.post (ADA_BOARD_API_URL env, 75s
+        write timeout per the kanban tool's flock observation)
+      - dedup entries now carry is_card; _dedup_result returns card_id
+        for card dupes (task_id for session dupes — a remote-dupe hit on
+        the dispatch host is still a running session)
+      - backend/realtime_provider.py DEVIN_INSTRUCTIONS + tool_guide.yml
+        — report the CARD id, board queues/runs it, async; watcher
+        notifies on completion as before
+      - tests/test_devin_dispatch.py — BoardDispatchTests (payload,
+        truncation, result shape, unreachable no-fallback, 400 verbatim)
+        + dedup tests reworked for the card path
+    Explicitly NOT done:
+      - ssh fallback (per the card: board unreachable is an error, the
+        tuned path is the whole point)
+      - deploy/restart (deploy-ada.sh on idc03 is the only path; e2e
+        below is the post-deploy check)
+      - devin_status/devin_followup/devin_answer, playbook path —
+        unchanged per the card
+  success_criteria:
+    - 'unit test mocks board_client.post: card payload asserted verbatim
+      (queue:true, action dispatch+repo, tags, priority, column)'
+    - 'board unreachable -> {ok:false, error} and _run never invoked'
+    - 'repo not whitelisted -> board-api 400 error surfaced verbatim'
+    - 'e2e on ada-dev lane (post-deploy): a voice dispatch produces a
+      queued card kanban-dispatch claims; card comms show primer injected'
+  risks:
+    - 'Deploy ORDER: this path needs board-api /card to honour
+      action{type:dispatch}+queue (same contract report-loop-spawn-api
+      shipped 2026-10-07) — already live for cms_spawn.'
+    - 'In-process dedup now caches card ids for the board path; a remote
+      dupe still reports a task_id (claimed session), not a card.'
+  resources:
+    - board reach: backend/board_client.py (single path, no Ada key)
+    - armed-card precedent: pwa_server.py /api/cms/spawn POST /card
+    - card id parse: tools.d/kanban.py _filed_card_id
+  owner: tony
+  estimated_duration: 1 session
+
+processing:
+  status: done
+  started_at: "2026-11-09"
+  steps:
+    - id: 1
+      label: "board dispatch path"
+      status: done
+      notes: "dispatch() branches on playbook: playbook keeps ssh start +
+        job-contract stamp; no playbook files the armed card and returns
+        {ok, card_id, note:'queued on the board — kanban-dispatch will
+        claim and run it'}"
+    - id: 2
+      label: "instructions"
+      status: done
+      notes: "DEVIN_INSTRUCTIONS + tool_guide.yml devin: blurb — card id
+        reported, async, watcher notifies"
+    - id: 3
+      label: "tests"
+      status: done
+      notes: "33 tests in test_devin_dispatch green; full suite 1739
+        passed / 7 skipped via pytest (borrowed deps venv + local pytest)"
+
+invoke:
+  tool:
+    - "devin action='dispatch' repo=<repo> task=<text> confirmed=true"
+
+env:
+  ADA_BOARD_API_URL: >-
+    board-api base — backend/board_client.py default
+    https://tony-dell.taila0626a.ts.net/apps/board-api; on idc03 the
+    loopback http://127.0.0.1:8787 is trusted
+  ADA_BOARD_DISPATCH_TIMEOUT_S: "card write timeout (default 75)"
+
+verification:
+  - "python3 scripts/tool-lint.py  # clean"
+  - ".venv/bin/python -m pytest tests/ -x -q  # 1739 passed, 7 skipped"
+  - "post-deploy e2e on ada-dev: voice 'Ada, dispatch a session on
+    ada-voice to ...' -> card voice-dispatch-<ts> appears queued on the
+    board, kanban-dispatch claims it, card comms show 'primer injected'"
