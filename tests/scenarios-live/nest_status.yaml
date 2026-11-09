@@ -1,0 +1,23 @@
+# nest_status — live acceptance: a queue-status question must route to
+# the nest_status tool (the published nest-queue-health snapshot), and
+# the reply must describe lane state — never a guessed "probably fine".
+name: nest-status-kk-mac
+tier: smoke
+transport: text
+turns:
+  - user: "Ada, is kk-mac processing anything on the llm queue right now?"
+    expect:
+      calls_any: ["nest_status"]
+      response_nonempty: true
+      response_contains_any:
+        - "kk-mac"
+        - "kk"
+        - "queue"
+        - "claimed"
+        - "drained"
+        - "pending"
+        - "idle"
+        - "ไม่"
+        - "คิว"
+      timeout_s: 60
+      settle_s: 8

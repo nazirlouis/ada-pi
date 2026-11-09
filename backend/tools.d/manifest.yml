@@ -149,3 +149,8 @@ tools:
     policy: confirmed
     secondary_allowed: false
     timeout_s: 120
+  nest_status:
+    module: nest_status
+    policy: read
+    secondary_allowed: true
+    timeout_s: 20
