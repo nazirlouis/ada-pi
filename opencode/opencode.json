@@ -8,7 +8,7 @@
         ".opencode/ada_mcp.py"
       ],
       "enabled": true,
-      "timeout": 10000
+      "timeout": 120000
     }
   },
   "permission": {
