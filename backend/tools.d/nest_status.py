@@ -100,6 +100,7 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
             "ollama_ok": worker.get("ollama_ok"),
             "load_1m": worker.get("load_1m"),
             "disk_free_gb": worker.get("disk_free_gb"),
+            "cpu_temp_c": worker.get("cpu_temp_c"),
             "node_busy": worker.get("node_busy"),
             "error": worker.get("error"),
         },
