@@ -121,6 +121,13 @@ async def run(runner: Any, **args: Any) -> dict[str, Any]:
             "heartbeat_age": _fmt_age(
                 (video.get("heartbeat") or {}).get("age_s")),
         },
+        "hosts": {
+            h: {k: v for k, v in (info or {}).items()
+                if k in ("role", "age_s", "stale", "cpu_temp_c",
+                         "load_1m", "disk_free_gb", "ollama_ok")}
+            for h, info in ((snap.get("hosts") or {})
+                            .get("by_host") or {}).items()
+        },
         "general_queue": {
             "packs_total": gen.get("total"),
             "done": gen.get("done"),
