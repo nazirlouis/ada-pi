@@ -859,6 +859,17 @@ def ada_adobe_stock_reuse(campaign_idea: str, compact: bool = False) -> str:
     compact=True returns only the preview summary and OpenChamber markdown —
     the full report exceeds tool-output display limits in OpenCode/OpenChamber.
     """
+    # Misroute guard (ADA-1130): flash-lite models keep choosing this tool
+    # for "adobe stock status"/QC questions. Bounce them to the right tool.
+    _statusish = {"status", "qc", "campaign", "pending", "review",
+                  "adobe stock status", "adobe stock qc"}
+    if str(campaign_idea or "").strip().lower() in _statusish:
+        return json.dumps({
+            "ok": False, "operation": "adobe-stock-reuse",
+            "error": "wrong_tool_for_status",
+            "next_safe_action": "this is a campaign-status/QC question — "
+                                "call ada_adobe_stock_qc instead and present "
+                                "its candidate image + native menu"})
     try:
         indexes, missing = _read_adobe_stock_indexes()
         report = build_adobe_stock_reuse_report(
@@ -1495,7 +1506,8 @@ def _picker_post(path: str, payload: dict[str, Any], timeout: float = 30) -> Any
 
 @mcp.tool()
 def ada_adobe_stock_qc() -> str:
-    """Adobe Stock campaign QC — pending candidate image + QC menu spec.
+    """Adobe Stock campaign STATUS/QC — call FIRST for 'adobe stock status',
+    candidate review, or repair. Returns pending candidate image + QC menu spec.
 
     Read-only. Show the candidate `markdown` (renders the image inline),
     then present a native question menu with the `menu` options. Tony's
