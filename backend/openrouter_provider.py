@@ -121,6 +121,13 @@ class OpenRouterTextProvider(RealtimeProvider):
             if m.strip()]
         self.model = self.models[0] if self.models else DEFAULT_MODELS[0]
         self.api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        # Gateway-first OR leg (card or-direct-bypass-leak-audit): when a
+        # LiteLLM gateway is configured, degraded text turns route through
+        # it (tracked + key-budgeted) instead of billing raw OpenRouter.
+        self.gw_models = [m.strip() for m in os.environ.get(
+            "ADA_OR_GW_FALLBACK_MODEL",
+            "or-free-nemotron-nano,or-free-gemma31b").split(",")
+            if m.strip()]
         # Gateway model CLASS, not a raw model name — the lane virtual
         # keys allow alias classes only (403 key_model_access_denied on
         # real names). chat rides gemini-3.5-flash paid->free->OR->lite (full-tier for voice/text parity).
@@ -554,16 +561,22 @@ class OpenRouterTextProvider(RealtimeProvider):
     # ---- OpenRouter leg ----------------------------------------------------
 
     async def _or_turn(self, last_err: Exception | None = None) -> str | None:
-        if not self.api_key.strip():
-            raise RuntimeError("OPENROUTER_API_KEY unset — OR leg skipped")
+        gw_base = os.environ.get("ADA_GEMINI_REST_BASE_URL", "").rstrip("/")
+        gw_key = os.environ.get("ADA_GEMINI_REST_API_KEY", "")
+        if gw_base and gw_key:
+            url, key, models = f"{gw_base}/v1/chat/completions", gw_key, self.gw_models
+        else:
+            if not self.api_key.strip():
+                raise RuntimeError("OPENROUTER_API_KEY unset — OR leg skipped")
+            url, key, models = OR_URL, self.api_key, self.models
         reply = ""
         async with httpx.AsyncClient(timeout=60) as client:
-            for model in self.models:
+            for model in models:
                 try:
                     r = await client.post(
-                        OR_URL,
+                        url,
                         headers={
-                            "Authorization": f"Bearer {self.api_key}",
+                            "Authorization": f"Bearer {key}",
                             "Content-Type": "application/json"},
                         json={"model": model,
                               "messages": self._or_messages(),
