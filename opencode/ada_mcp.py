@@ -12,6 +12,7 @@ import time
 import urllib.parse
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1008,6 +1009,240 @@ def ada_handoff_preview(card_reference: str, plan_confirmation: str = "") -> str
         return json.dumps(result, ensure_ascii=False, indent=2)
     except Exception as exc:
         return json.dumps({"ok": False, "operation": "handoff-preview", "error": str(exc), "board_api": BOARD_API})
+
+
+_PICK_STRATEGIES = ("sweep", "high-value", "stale", "queue")
+_CARD_PRIORITY_RANK = {"high": 3, "medium": 2, "low": 1}
+
+
+def _card_updated_ts(card: dict[str, Any]) -> datetime:
+    raw = str(card.get("updated") or card.get("created") or "")
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw[:16], fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return datetime.now(timezone.utc)
+
+
+def _card_actionable(card: dict[str, Any]) -> bool:
+    """Not finished, not waiting on a human, not already owned."""
+    if card.get("column") in ("done", "archive"):
+        return False
+    for r in card.get("requests") or []:
+        if r.get("status") not in ("answered", "closed"):
+            return False
+    if (card.get("action") or {}).get("status") in ("claimed", "running"):
+        return False
+    return True
+
+
+def _pick_cards(strategy: str, days: int, limit: int) -> list[dict[str, Any]]:
+    """Score actionable cards for one strategy; returns best-first rows."""
+    now = datetime.now(timezone.utc)
+    scored: list[tuple[dict[str, Any], str, tuple]] = []
+    for card in _cards():
+        if not _card_actionable(card):
+            continue
+        age = (now - _card_updated_ts(card)).days
+        col = card.get("column") or "backlog"
+        if strategy == "queue":
+            if (card.get("action") or {}).get("status") == "queued":
+                scored.append((card, "queued for dispatch", (0,)))
+        elif strategy == "stale":
+            if col == "doing" and age >= days:
+                scored.append((card, f"doing, idle {age}d", (age,)))
+        elif strategy == "sweep":
+            scored.append((
+                card,
+                f"{col}, untouched {age}d",
+                (1 if col == "doing" else 0, age),
+            ))
+        elif strategy == "high-value":
+            rank = _CARD_PRIORITY_RANK.get(
+                str(card.get("priority") or "").lower(), 0)
+            if rank:
+                scored.append((
+                    card,
+                    f"priority {card.get('priority')}, untouched {age}d",
+                    (rank, age),
+                ))
+    if strategy in ("sweep", "high-value", "stale"):
+        scored.sort(key=lambda t: t[2], reverse=True)
+    return [{"card": c, "why": w} for c, w, _ in scored[:limit]]
+
+
+@mcp.tool()
+def ada_card_pick(strategy: str = "sweep", limit: int = 3, days: int = 7) -> str:
+    """Pick actionable board cards by strategy; read-only, issues tokens.
+
+    sweep      — stalest actionable card (doing first, then backlog)
+    high-value — priority high>medium>low, ties by oldest updated
+    stale      — doing cards idle >= `days` (default 7)
+    queue      — cards with action.status == queued, board order
+
+    Candidates carry a selection_token usable with ada_plan/ada_preflight.
+    """
+    try:
+        if strategy not in _PICK_STRATEGIES:
+            return json.dumps({
+                "ok": False,
+                "operation": "card-pick",
+                "error": f"strategy must be one of {list(_PICK_STRATEGIES)}",
+            }, ensure_ascii=False, indent=2)
+        picks = _pick_cards(strategy, days, max(1, min(int(limit), 10)))
+        PENDING_NEXT_SELECTIONS.clear()
+        for pick in picks:
+            card = pick["card"]
+            ref = str(card.get("ref") or card.get("id") or "").lower()
+            if ref:
+                token = secrets.token_urlsafe(12)
+                pick["selection_token"] = token
+                PENDING_NEXT_SELECTIONS[ref] = (token, time.monotonic() + 900)
+            pick["card"] = _safe_card(card)
+        return json.dumps({
+            "ok": True,
+            "operation": "card-pick",
+            "strategy": strategy,
+            "picks": picks,
+            "mutations_performed": [],
+            "next_safe_action": (
+                "confirm a pick, then call ada_card_context for the work "
+                "pack or ada_preflight for the gated receipt"
+            ),
+        }, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({
+            "ok": False, "operation": "card-pick", "error": str(exc),
+            "board_api": BOARD_API,
+        }, ensure_ascii=False, indent=2)
+
+
+_CONTEXT_PATH_RE = re.compile(
+    r"(?:^|[\s'\"(])((?:docs|scripts|integrations|stacks|apps|tests|"
+    r"opencode|\.github|reports)/[\w./~:@+-]+)")
+_CONTEXT_FILE_RE = re.compile(
+    r"(?:^|[\s'\"(])([\w.+-]+\.(?:py|mjs|js|ts|sh|yml|yaml|md|json|php))")
+_DONE_HINTS_RE = re.compile(
+    r"(verif|done|deploy|expect|must|should|gate|check|test|confirm)",
+    re.IGNORECASE)
+_CONTEXT_MAX_COMMS = 5
+
+
+def _context_card_text(card: dict[str, Any]) -> str:
+    parts = [card.get("brief") or "", card.get("spec") or ""]
+    for c in (card.get("comms") or [])[-_CONTEXT_MAX_COMMS:]:
+        parts.append(str(c.get("text") or ""))
+    for r in card.get("requests") or []:
+        parts.append(str(r.get("ask") or ""))
+        parts.append(str(r.get("answer") or ""))
+    return "\n".join(parts)
+
+
+def _context_files(text: str, root: Path, max_files: int) -> list[Path]:
+    """Path-shaped tokens that exist under the workspace, deduped."""
+    seen, found = set(), []
+    for m in _CONTEXT_PATH_RE.finditer(text):
+        p = m.group(1).rstrip(".,;:)]")
+        f = root / p
+        if f.is_file() and p not in seen:
+            seen.add(p)
+            found.append(f)
+    for m in _CONTEXT_FILE_RE.finditer(text):
+        name = m.group(1)
+        if "/" in name:
+            continue
+        for f in list(root.glob(f"**/{name}"))[:1]:
+            rel = str(f.relative_to(root))
+            if rel not in seen:
+                seen.add(rel)
+                found.append(f)
+    return found[:max_files]
+
+
+def _context_done_condition(card: dict[str, Any]) -> str:
+    spec = (card.get("spec") or "").replace("\n", " ")
+    hinted = [s.strip() for s in re.split(r"(?<=[.;:])\s+", spec)
+              if _DONE_HINTS_RE.search(s)]
+    if hinted:
+        return hinted[-1]
+    brief = (card.get("brief") or "").strip()
+    return (brief[:200] if brief
+            else "(no explicit done-condition — derive one from spec "
+                 "before starting)")
+
+
+def _context_pack(card: dict[str, Any], root: Path,
+                  max_files: int = 8, head: int = 40) -> str:
+    text = _context_card_text(card)
+    files = _context_files(text, root, max_files)
+    md = [f"# Card {card.get('ref') or card.get('id')}: {card.get('title')}", ""]
+    md.append(f"- id: `{card.get('id')}`  ref: `{card.get('ref')}`")
+    md.append(f"- column: `{card.get('column')}`  "
+              f"priority: `{card.get('priority')}`")
+    if card.get("brief"):
+        md += ["", "## Brief", "", card["brief"]]
+    if card.get("spec"):
+        md += ["", "## Spec (verbatim)", "", card["spec"]]
+    open_reqs = [r for r in (card.get("requests") or [])
+                 if r.get("status") not in ("answered", "closed")]
+    if open_reqs:
+        md += ["", "## Open requests (needs human input first)"]
+        for r in open_reqs:
+            md.append(f"- {r.get('ask')} "
+                      f"(options: {', '.join(r.get('options') or [])})")
+    comms = (card.get("comms") or [])[-_CONTEXT_MAX_COMMS:]
+    if comms:
+        md += ["", "## Recent comms"]
+        for c in comms:
+            body = str(c.get("text") or "")
+            md.append(f"- `{c.get('at')}` {c.get('from')}: "
+                      f"{body[:300]}{'…' if len(body) > 300 else ''}")
+    for f in files:
+        try:
+            lines = f.read_text(errors="replace").splitlines()[:head]
+        except OSError:
+            continue
+        md += ["", f"### {f.relative_to(root)}", "", "```",
+               "\n".join(lines), "```"]
+    md += ["", "## Gates & conventions", "",
+           "- Work in a dispatch worktree; never edit the live checkout.",
+           "- Card mutations go through board-api, never card-YAML edits.",
+           "- Push via scripts/git-safe-push.sh; open a PR, let CI gate.",
+           "- Verify real state before asserting done.",
+           "- No secrets in chat/commits; never print token values.",
+           "", "## Done-condition (synthesized — check before finishing)",
+           "", _context_done_condition(card)]
+    return "\n".join(md)
+
+
+@mcp.tool()
+def ada_card_context(card_reference: str, max_files: int = 8) -> str:
+    """Build a compact work pack for one card; read-only.
+
+    Card fields + open requests + recent comms + workspace files
+    referenced by the card + gates + a synthesized done-condition.
+    The pack is sized to start an opencode session without the whole board.
+    """
+    try:
+        card = find_card(card_reference)
+        pack = _context_pack(card, WORKSPACE, max(0, min(int(max_files), 12)))
+        return json.dumps({
+            "ok": True,
+            "operation": "card-context",
+            "card": _safe_card(card),
+            "pack_markdown": pack,
+            "mutations_performed": [],
+            "next_safe_action": (
+                "work the pack in this session, verify the done-condition, "
+                "then hand the diff back for human review/commit"
+            ),
+        }, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({
+            "ok": False, "operation": "card-context", "error": str(exc),
+            "board_api": BOARD_API,
+        }, ensure_ascii=False, indent=2)
 
 
 READ_ONLY_PROFILES = {"ops-readonly", "ssot-research", "mddb-sequence", "storage-dryrun"}
