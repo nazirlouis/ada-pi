@@ -602,6 +602,27 @@ def _log_search_timing(
     )
 
 
+def _schedule_bge_shadow(
+    query: str,
+    banks: list[MemoryBank],
+    hits: list[dict[str, Any]],
+    *,
+    instance: str,
+    degraded: bool,
+) -> None:
+    """Start optional BGE shadow work without changing the baseline result."""
+    try:
+        from backend.bge_memory_shadow import schedule
+        schedule(
+            query, banks, hits, instance=instance,
+            baseline_degraded=degraded)
+    except Exception as exc:  # shadow setup must not break memory recall
+        logger.info(
+            "bge_memory_search shadow status=error error_type=%s",
+            type(exc).__name__,
+        )
+
+
 async def memory_search(
     mddb: MddbClient,
     registry: MemoryBankRegistry,
@@ -692,6 +713,10 @@ async def memory_search(
         _log_search_timing(
             bank_spec if not fanout_all else "all", len(banks), per_bank_ms,
             time.perf_counter() - t_start, hits, degraded)
+        if q and q != "*" and not include_inactive:
+            _schedule_bge_shadow(
+                q, banks, hits, instance=registry.instance,
+                degraded=degraded)
         return {
             "bank": "all" if fanout_all else bank_spec,
             "count": len(hits),
@@ -724,6 +749,9 @@ async def memory_search(
     _log_search_timing(
         b.name, 1, {b.name: round(elapsed * 1000)},
         time.perf_counter() - t_start, hits, degraded)
+    if q and q != "*" and not include_inactive:
+        _schedule_bge_shadow(
+            q, [b], hits, instance=registry.instance, degraded=degraded)
     return {
         "bank": b.name,
         "count": len(hits),
