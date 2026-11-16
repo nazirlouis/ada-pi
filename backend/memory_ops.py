@@ -674,12 +674,20 @@ async def memory_search(
             banks = [b for b in banks if b.name in resolved]
             for b in banks:
                 _check_bank_allowed(registry, b.name, person_entity)
-        results = await asyncio.gather(
-            *(
-                _timed_bank_docs(mddb, b, q, limit, include_inactive)
-                for b in banks
+        try:
+            results = await asyncio.gather(
+                *(
+                    _timed_bank_docs(mddb, b, q, limit, include_inactive)
+                    for b in banks
+                )
             )
-        )
+        except asyncio.CancelledError:
+            # Tool-level 8s budget fired — the paid path is degraded.
+            # Still shadow so BGE health/latency is measured exactly
+            # during provider outages; there is no baseline to overlap.
+            _schedule_bge_shadow(
+                q, banks, [], instance=registry.instance, degraded=True)
+            raise
         hits: list[dict[str, Any]] = []
         degraded = False
         per_bank_ms = {
@@ -729,8 +737,13 @@ async def memory_search(
         bank = registry.personal_bank_name(person_entity)
     b = registry.bank(str(bank))
     _check_bank_allowed(registry, b.name, person_entity)
-    docs, degraded, elapsed = await _timed_bank_docs(
-        mddb, b, q, limit, include_inactive)
+    try:
+        docs, degraded, elapsed = await _timed_bank_docs(
+            mddb, b, q, limit, include_inactive)
+    except asyncio.CancelledError:
+        _schedule_bge_shadow(
+            q, [b], [], instance=registry.instance, degraded=True)
+        raise
     hits = []
     used_docs = []
     for doc in docs:

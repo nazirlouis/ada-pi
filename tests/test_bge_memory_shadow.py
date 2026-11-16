@@ -132,6 +132,31 @@ class BgeMemoryShadowTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["degraded"])
         shadow.assert_awaited_once()
 
+    async def test_cancelled_baseline_still_schedules_shadow(self):
+        """A tool-level timeout (paid-path outage) must still shadow —
+        that is exactly when BGE-side health metrics matter."""
+        mddb = FakeMddb()
+        registry = build_registry("tony")
+        scheduled = []
+
+        async def hang(*_args, **_kwargs):
+            await asyncio.sleep(60)
+
+        with patch("backend.memory_ops._timed_bank_docs", hang), patch(
+            "backend.memory_ops._schedule_bge_shadow",
+            side_effect=lambda *a, **k: scheduled.append((a, k)),
+        ):
+            task = asyncio.create_task(
+                memory_search(mddb, registry, "all", "where is the gate"))
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertEqual(len(scheduled), 1)
+        self.assertTrue(scheduled[0][1].get("degraded"))
+        self.assertEqual(scheduled[0][0][2], [])
+
 
 if __name__ == "__main__":
     unittest.main()
